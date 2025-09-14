@@ -215,9 +215,27 @@ export class KeystrokeAnalyzer {
       return { consistency: 0, variance: 0 };
     }
 
+    // Remove outliers using IQR method for more stable variance
+    intervals.sort((a, b) => a - b);
+    const q1Index = Math.floor(intervals.length * 0.25);
+    const q3Index = Math.floor(intervals.length * 0.75);
+    const q1 = intervals[q1Index];
+    const q3 = intervals[q3Index];
+    const iqr = q3 - q1;
+    const lowerBound = q1 - 1.5 * iqr;
+    const upperBound = q3 + 1.5 * iqr;
+    
+    const filteredIntervals = intervals.filter(interval => 
+      interval >= lowerBound && interval <= upperBound
+    );
+
+    if (filteredIntervals.length < 3) {
+      return { consistency: 0, variance: 0 };
+    }
+
     // Calculate variance and consistency
-    const mean = intervals.reduce((sum, interval) => sum + interval, 0) / intervals.length;
-    const variance = intervals.reduce((sum, interval) => sum + Math.pow(interval - mean, 2), 0) / intervals.length;
+    const mean = filteredIntervals.reduce((sum, interval) => sum + interval, 0) / filteredIntervals.length;
+    const variance = filteredIntervals.reduce((sum, interval) => sum + Math.pow(interval - mean, 2), 0) / filteredIntervals.length;
     const standardDeviation = Math.sqrt(variance);
     
     // Consistency score (0-100, lower variance = higher consistency)
@@ -237,11 +255,13 @@ export class KeystrokeAnalyzer {
     const backspaceCount = events.filter(e => e.isBackspace).length;
     const deleteCount = events.filter(e => e.isDelete).length;
     const totalCorrections = backspaceCount + deleteCount;
-    const correctionRatio = events.length > 0 ? totalCorrections / events.length : 0;
+    const productiveEvents = events.filter(e => e.isPrintable && !e.isBackspace && !e.isDelete).length;
+    const totalTypingEvents = productiveEvents + totalCorrections;
     
-    // Calculate accuracy percentage (100% - error percentage)
-    const errorPercentage = correctionRatio * 100;
-    const accuracyPercentage = Math.max(0, 100 - errorPercentage);
+    // Calculate accuracy as productive characters vs total typing effort
+    const correctionRatio = totalTypingEvents > 0 ? totalCorrections / totalTypingEvents : 0;
+    const accuracyPercentage = totalTypingEvents > 0 ? Math.max(0, (productiveEvents / totalTypingEvents) * 100) : 100;
+    const errorRate = correctionRatio * 100;
 
     return {
       backspaceCount,
@@ -250,7 +270,7 @@ export class KeystrokeAnalyzer {
       correctionRatio: Math.round(correctionRatio * 1000) / 1000,
       accuracy: {
         percentage: Math.round(accuracyPercentage * 100) / 100,
-        errorRate: Math.round(errorPercentage * 100) / 100
+        errorRate: Math.round(errorRate * 100) / 100
       }
     };
   }
@@ -271,7 +291,10 @@ export class KeystrokeAnalyzer {
     const errorScore = Math.max(0, 30 - (errors.correctionRatio * 100));
     
     const totalScore = speedScore + consistencyScore + errorScore;
-    const flowState = typingSpeed.cpm > this.options.flowStateThreshold && rhythm.consistency > 60;
+    
+    // More flexible flow state calculation: good speed OR (decent speed with good consistency)
+    const flowState = (typingSpeed.cpm > this.options.flowStateThreshold) || 
+                     (typingSpeed.cpm > (this.options.flowStateThreshold * 0.8) && rhythm.consistency > 50);
 
     return {
       score: Math.round(totalScore),

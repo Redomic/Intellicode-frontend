@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { selectIsAuthenticated } from '../../store/userSlice';
 import { useGetProfileSummary } from '../../services/api';
+import SkeletonLoader from '../ui/SkeletonLoader';
+import LoadingSpinner from '../ui/LoadingSpinner';
 
 /**
  * ProfileHeader - GitHub-style profile header with user info and rating
@@ -116,18 +118,17 @@ const ProfileHeader = ({ user, onStartChallenge }) => {
             
             <div className="flex items-center space-x-4 text-zinc-400 mb-3">
               <span className="text-base">@{user?.email?.split('@')[0] || 'username'}</span>
-              {userStats.globalRank && (
+              {profileLoading ? (
+                <>
+                  <span>•</span>
+                  <LoadingSpinner size="sm" variant="secondary" text="Loading stats..." />
+                </>
+              ) : userStats.globalRank ? (
                 <>
                   <span>•</span>
                   <span>#{userStats.globalRank} globally</span>
                 </>
-              )}
-              {profileLoading && (
-                <>
-                  <span>•</span>
-                  <span>Loading...</span>
-                </>
-              )}
+              ) : null}
             </div>
 
             <div className="flex items-center space-x-6">

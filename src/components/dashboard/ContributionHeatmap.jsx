@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { selectIsAuthenticated, selectCurrentUser } from '../../store/userSlice';
 import { useGetContributionHeatmap } from '../../services/api';
+import SkeletonLoader from '../ui/SkeletonLoader';
+import LoadingSpinner from '../ui/LoadingSpinner';
 
 /**
  * ContributionHeatmap - GitHub-style contribution heatmap for coding activity
@@ -90,14 +92,24 @@ const ContributionHeatmap = ({ user }) => {
     return months;
   };
 
+  if (heatmapLoading) {
+    return (
+      <div className="bg-zinc-800/50 rounded-lg p-6 border border-zinc-700">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-medium text-orange-100">Coding Activity</h3>
+          <LoadingSpinner size="sm" variant="secondary" text="Loading activity..." />
+        </div>
+        <SkeletonLoader variant="heatmap" />
+      </div>
+    );
+  }
+
   return (
     <div className="bg-zinc-800/50 rounded-lg p-6 border border-zinc-700">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-medium text-orange-100">Coding Activity</h3>
         <div className="text-zinc-400 text-sm">
-          {heatmapLoading 
-            ? "Loading activity..."
-            : heatmapError 
+          {heatmapError 
             ? "Error loading data"
             : `${totalContributions} problems solved in the last year`
           }

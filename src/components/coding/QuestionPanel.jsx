@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
+import SkeletonLoader from '../ui/SkeletonLoader';
+import LoadingSpinner from '../ui/LoadingSpinner';
 
 /**
  * QuestionPanel - Left panel displaying coding question details
  */
-const QuestionPanel = ({ question, onQuestionChange, availableQuestions }) => {
+const QuestionPanel = ({ question, onQuestionChange, availableQuestions, isLoading = false }) => {
   const [activeTab, setActiveTab] = useState('problem');
 
   const getDifficultyColor = (difficulty) => {
@@ -23,10 +25,66 @@ const QuestionPanel = ({ question, onQuestionChange, availableQuestions }) => {
     { id: 'problem', label: 'Problem' }
   ];
 
+  if (isLoading) {
+    return (
+      <div className="h-full bg-zinc-900 flex flex-col">
+        {/* Header Skeleton */}
+        <div className="p-6 border-b border-zinc-700">
+          <div className="flex items-center justify-between mb-3">
+            <SkeletonLoader width="60%" height="24px" />
+            <SkeletonLoader width="60px" height="20px" className="rounded-full" />
+          </div>
+          <div className="flex space-x-2">
+            <SkeletonLoader width="80px" height="20px" className="rounded" />
+            <SkeletonLoader width="100px" height="20px" className="rounded" />
+            <SkeletonLoader width="70px" height="20px" className="rounded" />
+          </div>
+        </div>
+
+        {/* Tab Skeleton */}
+        <div className="border-b border-zinc-700">
+          <div className="px-4 py-3">
+            <SkeletonLoader width="80px" height="20px" />
+          </div>
+        </div>
+
+        {/* Content Skeleton */}
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <SkeletonLoader lines={4} />
+            </div>
+            
+            <div className="space-y-4">
+              <SkeletonLoader width="150px" height="24px" />
+              <div className="bg-zinc-800 rounded-lg p-4 border border-zinc-700">
+                <SkeletonLoader width="120px" height="20px" className="mb-3" />
+                <div className="space-y-3">
+                  <SkeletonLoader lines={2} />
+                  <SkeletonLoader lines={2} />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <SkeletonLoader width="120px" height="24px" />
+              <SkeletonLoader lines={3} />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!question) {
     return (
       <div className="h-full flex items-center justify-center bg-zinc-900">
-        <p className="text-zinc-400">No question selected</p>
+        <div className="text-center">
+          <svg className="w-12 h-12 mx-auto mb-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <p className="text-zinc-400">No question selected</p>
+        </div>
       </div>
     );
   }

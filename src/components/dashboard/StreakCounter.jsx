@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { selectIsAuthenticated, selectCurrentUser } from '../../store/userSlice';
 import { useGetUserStreak } from '../../services/api';
+import LoadingSpinner from '../ui/LoadingSpinner';
 
 /**
  * StreakCounter - Duolingo-style colorful streak counter
@@ -92,8 +93,11 @@ const StreakCounter = ({ streak: propStreak }) => {
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center pb-9">
             {streakLoading ? (
-              <div className={`text-4xl font-bold opacity-75 ${hasStreak ? 'text-white' : 'text-zinc-400'}`}>
-                Loading...
+              <div className="flex flex-col items-center justify-center space-y-4">
+                <LoadingSpinner size="lg" variant="accent" />
+                <div className={`text-lg font-medium opacity-75 ${hasStreak ? 'text-white' : 'text-zinc-400'}`}>
+                  Loading streak data...
+                </div>
               </div>
             ) : streakError ? (
               <div className={`text-4xl font-bold opacity-75 ${hasStreak ? 'text-white' : 'text-zinc-400'}`}>
@@ -128,7 +132,10 @@ const StreakCounter = ({ streak: propStreak }) => {
             hasStreak ? 'text-orange-100' : 'text-zinc-400'
           }`}>
             {streakLoading ? (
-              "Loading personal best..."
+              <div className="flex items-center justify-center space-x-2">
+                <LoadingSpinner size="sm" variant="secondary" />
+                <span>Loading personal best...</span>
+              </div>
             ) : streakError ? (
               "Personal best: --"
             ) : longestStreak > 0 ? (

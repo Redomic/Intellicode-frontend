@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { behaviorTracker } from '../services/behaviorTracking';
-import { KeystrokeAnalyzer } from '../utils/keystrokeAnalyzer';
+import { KeystrokeAnalyzer } from '../utils/keystrokeAnalyzer_fixed';
 import {
   useStartTrackingSession,
   useEndTrackingSession,

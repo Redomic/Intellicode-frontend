@@ -5,6 +5,7 @@ import FormInput from '../../components/FormInput';
 import NotificationContainer from '../../components/NotificationContainer';
 import useNotification from '../../hooks/useNotification';
 import { validateEmail } from '../../utils/validation';
+import { LoadingButton } from '../../components/ui/InlineLoading';
 
 const LoginPage = () => {
   const [formData, setFormData] = useState({
@@ -163,13 +164,16 @@ const LoginPage = () => {
             autoComplete="current-password"
           />
 
-          <button
+          <LoadingButton
             type="submit"
-            disabled={loading}
-            className="w-full px-4 py-3 bg-zinc-100 text-zinc-900 font-medium rounded-lg hover:bg-white transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            isLoading={loading}
+            loadingText="Signing In..."
+            variant="primary"
+            size="md"
+            className="w-full"
           >
-            {loading ? 'Signing In...' : 'Sign In'}
-          </button>
+            Sign In
+          </LoadingButton>
         </form>
 
         {/* Footer */}

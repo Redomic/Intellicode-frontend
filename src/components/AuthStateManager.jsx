@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectAccessToken, selectIsAuthenticated, setCurrentUser, clearAuthData } from '../store/userSlice';
 import useAuth from '../hooks/useAuth';
+import FullPageLoading from './ui/FullPageLoading';
 
 /**
  * AuthStateManager component for handling authentication state persistence
@@ -53,12 +54,11 @@ const AuthStateManager = ({ children }) => {
   // Show loading screen while initializing
   if (!isInitialized) {
     return (
-      <div className="min-h-screen bg-zinc-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-zinc-400 mx-auto mb-4"></div>
-          <p className="text-zinc-400 text-sm">Loading IntelliCode...</p>
-        </div>
-      </div>
+      <FullPageLoading 
+        message="Initializing your session..."
+        subtitle="Setting up your personalized learning environment"
+        showLogo={true}
+      />
     );
   }
 

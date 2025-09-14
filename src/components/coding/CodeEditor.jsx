@@ -4,6 +4,8 @@ import { useSubmitSolution } from '../../services/api';
 import useBehaviorTracking from '../../hooks/useBehaviorTracking';
 import BehaviorFeedback from './BehaviorFeedback';
 import BehaviorPrivacyControls from './BehaviorPrivacyControls';
+import { LoadingButton } from '../ui/InlineLoading';
+import LoadingSpinner from '../ui/LoadingSpinner';
 
 /**
  * CodeEditor - Right panel with code editor and execution controls
@@ -690,28 +692,26 @@ const CodeEditor = ({
           </div>
 
           <div className="flex items-center space-x-2">
-            <button
+            <LoadingButton
               onClick={handleRunCode}
-              disabled={isRunning || isApiLoading}
-              className="
-                px-4 py-1 text-sm bg-green-600 hover:bg-green-700 disabled:bg-green-800 
-                text-white rounded transition-colors duration-200
-                focus:outline-none focus:ring-2 focus:ring-green-500
-              "
+              isLoading={isRunning}
+              loadingText="Running..."
+              variant="ghost"
+              size="sm"
+              className="bg-green-600 hover:bg-green-700 text-white border-green-600 hover:border-green-700"
             >
-              {isRunning ? 'Running...' : 'Run'}
-            </button>
-            <button
+              Run
+            </LoadingButton>
+            <LoadingButton
               onClick={handleSubmit}
-              disabled={isRunning || isApiLoading}
-              className="
-                px-4 py-1 text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 
-                text-white rounded transition-colors duration-200
-                focus:outline-none focus:ring-2 focus:ring-blue-500
-              "
+              isLoading={isApiLoading}
+              loadingText="Submitting..."
+              variant="ghost"
+              size="sm"
+              className="bg-blue-600 hover:bg-blue-700 text-white border-blue-600 hover:border-blue-700"
             >
-              {isApiLoading ? 'Submitting...' : isRunning ? 'Running...' : 'Submit'}
-            </button>
+              Submit
+            </LoadingButton>
           </div>
         </div>
       </div>
@@ -794,7 +794,7 @@ const CodeEditor = ({
                 }}
                 loading={
                   <div className="flex items-center justify-center h-full bg-zinc-800">
-                    <div className="text-zinc-400">Loading editor...</div>
+                    <LoadingSpinner size="lg" variant="accent" text="Loading editor..." />
                   </div>
                 }
               />
@@ -965,6 +965,7 @@ const CodeEditor = ({
           isVisible={showBehaviorFeedback}
           analyzer={behaviorTracking.analyzer}
           behaviorTracker={behaviorTracking.behaviorTracker}
+          liveMetrics={behaviorTracking.liveMetrics}
           position="bottom-right"
           compact={false}
         />

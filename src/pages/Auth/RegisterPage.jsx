@@ -10,6 +10,7 @@ import {
   validateName, 
   validateConfirmPassword 
 } from '../../utils/validation';
+import { LoadingButton } from '../../components/ui/InlineLoading';
 
 const RegisterPage = () => {
   const [formData, setFormData] = useState({
@@ -206,13 +207,16 @@ const RegisterPage = () => {
             autoComplete="new-password"
           />
 
-          <button
+          <LoadingButton
             type="submit"
-            disabled={loading}
-            className="w-full px-4 py-3 bg-zinc-100 text-zinc-900 font-medium rounded-lg hover:bg-white transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            isLoading={loading}
+            loadingText="Creating Account..."
+            variant="primary"
+            size="md"
+            className="w-full"
           >
-            {loading ? 'Creating Account...' : 'Create Account'}
-          </button>
+            Create Account
+          </LoadingButton>
         </form>
 
         {/* Footer */}
