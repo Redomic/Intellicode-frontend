@@ -5,16 +5,15 @@ import React, { useState, useEffect } from 'react';
  */
 const CompletionStep = ({ data, onNext, onBack, canGoBack, stepIndex }) => {
   const [isVisible, setIsVisible] = useState(false);
-  const [showConfetti, setShowConfetti] = useState(false);
 
   useEffect(() => {
     setIsVisible(true);
-    // Trigger confetti animation after initial render
-    setTimeout(() => setShowConfetti(true), 500);
   }, []);
 
   const handleStartLearning = () => {
-    onNext(); // This will complete the onboarding flow
+    // Call onNext to properly complete the onboarding flow
+    // The OnboardingFlow component will handle navigation to dashboard
+    onNext();
   };
 
   const getGoalSummary = () => {
@@ -43,35 +42,12 @@ const CompletionStep = ({ data, onNext, onBack, canGoBack, stepIndex }) => {
     return timeMap[data.preferences?.studyTime] || 'flexible time';
   };
 
-  const confettiPieces = Array.from({ length: 50 }, (_, i) => ({
-    id: i,
-    left: Math.random() * 100,
-    delay: Math.random() * 3,
-    duration: 3 + Math.random() * 2,
-    color: ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6'][Math.floor(Math.random() * 5)]
-  }));
 
   return (
     <div className={`
-      text-center transform transition-all duration-1000 ease-out relative overflow-hidden
+      text-center transform transition-all duration-1000 ease-out
       ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}
     `}>
-      {/* Confetti Animation */}
-      {showConfetti && (
-        <div className="absolute inset-0 pointer-events-none">
-          {confettiPieces.map((piece) => (
-            <div
-              key={piece.id}
-              className="absolute w-2 h-2 opacity-80"
-              style={{
-                left: `${piece.left}%`,
-                backgroundColor: piece.color,
-                animation: `confetti-fall ${piece.duration}s linear ${piece.delay}s infinite`
-              }}
-            />
-          ))}
-        </div>
-      )}
 
       {/* Celebration Icon */}
       <div className={`
@@ -112,7 +88,7 @@ const CompletionStep = ({ data, onNext, onBack, canGoBack, stepIndex }) => {
           p-6 bg-gradient-to-br from-blue-500/10 to-blue-600/5 border border-blue-500/20 rounded-lg
           animate-in fade-in slide-in-from-bottom-4 duration-700
         `} style={{animationDelay: '800ms'}}>
-          <div className="mb-3">
+          <div className="mb-3 flex justify-center">
             <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
             </svg>
@@ -126,7 +102,7 @@ const CompletionStep = ({ data, onNext, onBack, canGoBack, stepIndex }) => {
           p-6 bg-gradient-to-br from-green-500/10 to-green-600/5 border border-green-500/20 rounded-lg
           animate-in fade-in slide-in-from-bottom-4 duration-700
         `} style={{animationDelay: '900ms'}}>
-          <div className="mb-3">
+          <div className="mb-3 flex justify-center">
             <svg className="w-8 h-8 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
@@ -140,7 +116,7 @@ const CompletionStep = ({ data, onNext, onBack, canGoBack, stepIndex }) => {
           p-6 bg-gradient-to-br from-yellow-500/10 to-orange-600/5 border border-yellow-500/20 rounded-lg
           animate-in fade-in slide-in-from-bottom-4 duration-700
         `} style={{animationDelay: '1000ms'}}>
-          <div className="mb-3">
+          <div className="mb-3 flex justify-center">
             <svg className="w-8 h-8 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
             </svg>
@@ -221,19 +197,6 @@ const CompletionStep = ({ data, onNext, onBack, canGoBack, stepIndex }) => {
         </button>
       </div>
 
-      {/* Custom Confetti Animation Styles */}
-      <style jsx>{`
-        @keyframes confetti-fall {
-          0% {
-            transform: translateY(-100vh) rotate(0deg);
-            opacity: 1;
-          }
-          100% {
-            transform: translateY(100vh) rotate(720deg);
-            opacity: 0;
-          }
-        }
-      `}</style>
     </div>
   );
 };

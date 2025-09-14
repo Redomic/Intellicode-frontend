@@ -18,7 +18,7 @@ import CompletionStep from './onboarding/CompletionStep';
 const OnboardingFlow = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const { getCurrentUser } = useAuth();
+  const { getCurrentUser, logout } = useAuth();
   
   const [currentStep, setCurrentStep] = useState(0);
   const [onboardingData, setOnboardingData] = useState({
@@ -102,10 +102,16 @@ const OnboardingFlow = () => {
       {/* Background Gradient */}
       <div className="absolute inset-0 bg-gradient-to-br from-zinc-900 via-zinc-900 to-zinc-800 opacity-50"></div>
       
-      {/* Progress Indicator */}
+      {/* Header with Progress Indicator and Logout */}
       <div className="absolute top-4 left-0 right-0 z-10 px-6">
         <div className="max-w-5xl mx-auto">
-          <div className="flex justify-center">
+          {/* Top row with brand, progress, and logout */}
+          <div className="flex justify-between items-center mb-2">
+            <div className="text-lg font-thin text-zinc-100 tracking-tight">
+              IntelliCode
+            </div>
+            
+            {/* Progress indicator */}
             <div className="flex items-center space-x-2 sm:space-x-3">
               {steps.map((step, index) => (
                 <div key={index} className="flex items-center">
@@ -130,7 +136,21 @@ const OnboardingFlow = () => {
                 </div>
               ))}
             </div>
+            
+            <button
+              onClick={logout}
+              className="
+                px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 
+                border border-zinc-700 hover:border-zinc-600 rounded-md
+                transition-colors duration-200 bg-zinc-800/50 hover:bg-zinc-700/50
+                focus:outline-none focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 focus:ring-offset-zinc-900
+              "
+              title="Sign out and return to homepage"
+            >
+              Sign Out
+            </button>
           </div>
+          
           <div className="text-center mt-2 sm:mt-3">
             <span className="text-xs text-zinc-500 font-light tracking-wide">
               Step {currentStep + 1} of {steps.length} • {steps[currentStep].title}
@@ -140,7 +160,7 @@ const OnboardingFlow = () => {
       </div>
 
       {/* Step Content */}
-      <div className="pt-20 pb-8 px-4 sm:px-6 relative z-10 min-h-screen flex items-center justify-center">
+      <div className="pt-24 pb-8 px-4 sm:px-6 relative z-10 min-h-screen flex items-center justify-center">
         <div className="w-full max-w-5xl">
           <CurrentStepComponent
             data={onboardingData}

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import useAxios from '../../hooks/useAxios';
 import useAuth from '../../hooks/useAuth';
 import PerformanceTracker from './PerformanceTracker';
+import api from '../../utils/axios';
 
 /**
  * AssessmentStep - New step for skill assessment after skill level selection
@@ -32,11 +33,19 @@ const AssessmentStep = ({ data, onNext, onBack, canGoBack, stepIndex }) => {
   const completeAssessmentHook = useAxios('', { method: 'POST', immediate: false });
   const getQuestionHook = useAxios('', { method: 'GET', immediate: false });
   
+  // Only check loading state when we're actually making requests
   const loading = createAssessmentHook.loading || submitAnswerHook.loading || completeAssessmentHook.loading || getQuestionHook.loading;
   const error = createAssessmentHook.error || submitAnswerHook.error || completeAssessmentHook.error || getQuestionHook.error;
 
   // Track if assessment creation has been attempted to prevent multiple calls
   const hasAttemptedCreateRef = useRef(false);
+  
+  // Reset attempt ref on unmount
+  useEffect(() => {
+    return () => {
+      hasAttemptedCreateRef.current = false;
+    };
+  }, []);
 
   const createAssessment = useCallback(async () => {
     const userKey = currentUser?._key || currentUser?.key;
@@ -78,11 +87,20 @@ const AssessmentStep = ({ data, onNext, onBack, canGoBack, stepIndex }) => {
         setQuestionStartTime(Date.now());
         // Fetch the actual questions after creating assessment
         try {
-          const questionsPromises = response.question_keys.map(key => 
-            getQuestionHook.execute({}, `/questions/${key}`)
-          );
+          console.log('Fetching questions for keys:', response.question_keys);
+          const questionsPromises = response.question_keys.map(async (key) => {
+            try {
+              const questionResponse = await api.get(`/questions/${key}`);
+              return questionResponse.data;
+            } catch (err) {
+              console.error(`Failed to fetch question ${key}:`, err);
+              return null;
+            }
+          });
           const questions = await Promise.all(questionsPromises);
-          setQuestionsData(questions.filter(q => q !== null));
+          const validQuestions = questions.filter(q => q !== null);
+          console.log('Fetched questions:', validQuestions);
+          setQuestionsData(validQuestions);
         } catch (questionsErr) {
           console.error('Failed to fetch questions:', questionsErr);
         }
@@ -105,16 +123,19 @@ const AssessmentStep = ({ data, onNext, onBack, canGoBack, stepIndex }) => {
       
       // For other errors, show the error state which will allow retry
     }
-  }, [currentUser, data.skillLevel, onNext]);
+  }, [currentUser?._key, currentUser?.key, data.skillLevel, onNext, createAssessmentHook]);
 
   useEffect(() => {
     setIsVisible(true);
     const userKey = currentUser?._key || currentUser?.key;
-    if (data.skillLevel && userKey && !hasAttemptedCreateRef.current) {
+    
+    // Only create assessment if we have all required data and haven't attempted yet
+    if (data.skillLevel && userKey && !hasAttemptedCreateRef.current && !assessmentData) {
+      console.log('Triggering assessment creation:', { userKey, skillLevel: data.skillLevel });
       hasAttemptedCreateRef.current = true;
       createAssessment();
     }
-  }, [data.skillLevel, currentUser, createAssessment]);
+  }, [data.skillLevel, currentUser, createAssessment, assessmentData]);
 
   const submitAnswer = async () => {
     if (!selectedAnswer || !assessmentData) {
@@ -207,15 +228,25 @@ const AssessmentStep = ({ data, onNext, onBack, canGoBack, stepIndex }) => {
 
   // Get current question from real data
   const getCurrentQuestion = () => {
+    console.log('getCurrentQuestion called:', {
+      questionsData: questionsData,
+      questionsDataLength: questionsData?.length,
+      currentQuestionIndex,
+      hasQuestions: !!questionsData && questionsData.length > 0
+    });
+    
     if (!questionsData || currentQuestionIndex >= questionsData.length) {
+      console.log('No questions available or index out of bounds');
       return null;
     }
 
     const question = questionsData[currentQuestionIndex];
+    console.log('Current question:', question);
+    
     if (!question) return null;
 
     // Transform backend question format to frontend format
-    return {
+    const transformedQuestion = {
       title: question.title,
       description: question.description,
       options: question.content?.options || [],
@@ -223,6 +254,9 @@ const AssessmentStep = ({ data, onNext, onBack, canGoBack, stepIndex }) => {
       estimated_time: question.estimated_time_minutes,
       difficulty: question.difficulty
     };
+    
+    console.log('Transformed question:', transformedQuestion);
+    return transformedQuestion;
   };
 
   const currentQuestion = getCurrentQuestion();
@@ -243,11 +277,20 @@ const AssessmentStep = ({ data, onNext, onBack, canGoBack, stepIndex }) => {
     );
   }
 
-  if (loading && !assessmentData) {
+  // Show loading only when actually creating assessment or when we don't have assessment data yet
+  const shouldShowLoading = (loading && !assessmentData) || (!assessmentData && hasAttemptedCreateRef.current && !error);
+  
+  if (shouldShowLoading) {
     return (
       <div className="text-center">
         <div className="animate-spin w-8 h-8 border-2 border-zinc-500 border-t-zinc-300 rounded-full mx-auto mb-4"></div>
         <p className="text-zinc-400">Preparing your assessment...</p>
+        {/* Debug info in development */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="mt-4 text-xs text-zinc-600">
+            Debug: loading={loading.toString()}, hasAssessment={!!assessmentData}, attempted={hasAttemptedCreateRef.current.toString()}
+          </div>
+        )}
       </div>
     );
   }
@@ -260,13 +303,27 @@ const AssessmentStep = ({ data, onNext, onBack, canGoBack, stepIndex }) => {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
           </svg>
           <p>Failed to load assessment</p>
+          <p className="text-sm text-zinc-500 mt-2">{typeof error === 'string' ? error : 'Please try again'}</p>
         </div>
-        <button
-          onClick={createAssessment}
-          className="px-6 py-2 bg-zinc-700 text-zinc-200 rounded-lg hover:bg-zinc-600 transition-colors"
-        >
-          Try Again
-        </button>
+        <div className="flex items-center justify-center space-x-4">
+          <button
+            onClick={() => {
+              hasAttemptedCreateRef.current = false;
+              createAssessment();
+            }}
+            className="px-6 py-2 bg-zinc-700 text-zinc-200 rounded-lg hover:bg-zinc-600 transition-colors"
+          >
+            Try Again
+          </button>
+          {canGoBack && (
+            <button
+              onClick={onBack}
+              className="px-6 py-2 text-zinc-400 hover:text-zinc-200 transition-colors"
+            >
+              ← Go Back
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -405,7 +462,14 @@ const AssessmentStep = ({ data, onNext, onBack, canGoBack, stepIndex }) => {
   if (!currentQuestion) {
     return (
       <div className="text-center">
+        <div className="animate-spin w-8 h-8 border-2 border-zinc-500 border-t-zinc-300 rounded-full mx-auto mb-4"></div>
         <p className="text-zinc-400">Loading question...</p>
+        {/* Debug info in development */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="mt-4 text-xs text-zinc-600">
+            Debug: assessmentData={!!assessmentData}, questionsData.length={questionsData?.length || 0}, currentIndex={currentQuestionIndex}
+          </div>
+        )}
       </div>
     );
   }
