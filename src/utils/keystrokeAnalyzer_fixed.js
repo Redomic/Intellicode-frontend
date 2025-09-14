@@ -1,0 +1,438 @@
+/**
+ * KeystrokeAnalyzer - Real-time typing pattern analysis
+ * Processes keystroke events to extract meaningful behavioral insights
+ */
+
+export class KeystrokeAnalyzer {
+  constructor(options = {}) {
+    this.options = {
+      pauseThreshold: 500, // ms - anything longer is considered a pause
+      burstThreshold: 150, // ms - anything shorter is rapid typing
+      flowStateThreshold: 40, // CPM - minimum speed for flow state
+      analysisWindow: 60000, // ms - window for calculating live metrics (1 minute)
+      ...options
+    };
+
+    this.events = [];
+    this.metrics = {
+      typingSpeed: { cpm: 0, wpm: 0 },
+      pauses: { count: 0, averageDuration: 0, longestDuration: 0 },
+      bursts: { count: 0, averageLength: 0, longestLength: 0 },
+      rhythm: { consistency: 0, variance: 0 },
+      errors: { backspaceCount: 0, correctionRatio: 0 },
+      accuracy: { percentage: 100, errorRate: 0 },
+      productivity: { score: 0, flowState: false },
+      session: { duration: 0, totalKeystrokes: 0, productiveKeystrokes: 0 }
+    };
+
+    this.liveMetrics = { ...this.metrics };
+    this.listeners = new Set();
+  }
+
+  /**
+   * Add a keystroke event for analysis
+   */
+  addKeystroke(event) {
+    const processedEvent = this.processKeystrokeEvent(event);
+    this.events.push(processedEvent);
+
+    // Update live metrics
+    this.updateLiveMetrics();
+    
+    // Notify listeners
+    this.notifyListeners('keystrokeAdded', processedEvent);
+    this.notifyListeners('metricsUpdated', this.liveMetrics);
+
+    return processedEvent;
+  }
+
+  /**
+   * Process raw keystroke event
+   */
+  processKeystrokeEvent(event) {
+    const now = Date.now();
+    const processedEvent = {
+      timestamp: event.timestamp ? new Date(event.timestamp).getTime() : now,
+      key: event.key_pressed || event.key,
+      keyCode: event.key_code || event.keyCode,
+      isPrintable: event.is_printable !== undefined ? event.is_printable : this.isPrintableKey(event.key_pressed || event.key),
+      isBackspace: this.isBackspaceKey(event.key_pressed || event.key),
+      isDelete: this.isDeleteKey(event.key_pressed || event.key),
+      isNavigation: this.isNavigationKey(event.key_pressed || event.key),
+      textLength: event.text_length || 0,
+      cursorPosition: event.cursor_position || null,
+      timeSinceLastKeyStroke: 0
+    };
+
+    // Calculate time since last keystroke
+    if (this.events.length > 0) {
+      const lastEvent = this.events[this.events.length - 1];
+      processedEvent.timeSinceLastKeyStroke = processedEvent.timestamp - lastEvent.timestamp;
+    }
+
+    return processedEvent;
+  }
+
+  /**
+   * Update live metrics based on recent events
+   */
+  updateLiveMetrics() {
+    const now = Date.now();
+    const windowStart = now - this.options.analysisWindow;
+    
+    // Filter events within analysis window
+    const recentEvents = this.events.filter(e => e.timestamp >= windowStart);
+    
+    if (recentEvents.length < 2) {
+      return; // Need at least 2 events for meaningful analysis
+    }
+
+    // Calculate typing speed
+    this.liveMetrics.typingSpeed = this.calculateTypingSpeed(recentEvents);
+    
+    // Analyze pauses
+    this.liveMetrics.pauses = this.analyzePauses(recentEvents);
+    
+    // Analyze bursts
+    this.liveMetrics.bursts = this.analyzeBursts(recentEvents);
+    
+    // Calculate rhythm consistency
+    this.liveMetrics.rhythm = this.analyzeRhythm(recentEvents);
+    
+    // Error analysis (includes accuracy calculation)
+    const errorAnalysis = this.analyzeErrors(recentEvents);
+    this.liveMetrics.errors = errorAnalysis;
+    this.liveMetrics.accuracy = errorAnalysis.accuracy;
+    
+    // Calculate productivity score
+    this.liveMetrics.productivity = this.calculateProductivity(this.liveMetrics);
+    
+    // Session statistics
+    this.liveMetrics.session = this.calculateSessionStats(recentEvents);
+  }
+
+  /**
+   * Calculate typing speed (CPM and WPM)
+   */
+  calculateTypingSpeed(events) {
+    if (events.length < 2) return { cpm: 0, wpm: 0 };
+
+    const productiveEvents = events.filter(e => e.isPrintable && !e.isBackspace);
+    const timeSpan = (events[events.length - 1].timestamp - events[0].timestamp) / 1000; // seconds
+
+    if (timeSpan === 0) return { cpm: 0, wpm: 0 };
+
+    const cpm = (productiveEvents.length / timeSpan) * 60;
+    const wpm = cpm / 5; // Standard conversion: 5 characters = 1 word
+
+    return {
+      cpm: Math.round(cpm * 10) / 10,
+      wpm: Math.round(wpm * 10) / 10
+    };
+  }
+
+  /**
+   * Analyze typing pauses
+   */
+  analyzePauses(events) {
+    const pauses = [];
+    
+    for (let i = 1; i < events.length; i++) {
+      const timeDiff = events[i].timeSinceLastKeyStroke;
+      if (timeDiff > this.options.pauseThreshold) {
+        pauses.push(timeDiff);
+      }
+    }
+
+    if (pauses.length === 0) {
+      return { count: 0, averageDuration: 0, longestDuration: 0 };
+    }
+
+    const averageDuration = pauses.reduce((sum, pause) => sum + pause, 0) / pauses.length;
+    const longestDuration = Math.max(...pauses);
+
+    return {
+      count: pauses.length,
+      averageDuration: Math.round(averageDuration),
+      longestDuration: Math.round(longestDuration)
+    };
+  }
+
+  /**
+   * Analyze typing bursts
+   */
+  analyzeBursts(events) {
+    const bursts = [];
+    let currentBurst = 0;
+
+    for (let i = 1; i < events.length; i++) {
+      const timeDiff = events[i].timeSinceLastKeyStroke;
+      
+      if (timeDiff < this.options.burstThreshold && events[i].isPrintable) {
+        currentBurst++;
+      } else {
+        if (currentBurst > 1) {
+          bursts.push(currentBurst);
+        }
+        currentBurst = events[i].isPrintable ? 1 : 0;
+      }
+    }
+
+    // Add final burst if it exists
+    if (currentBurst > 1) {
+      bursts.push(currentBurst);
+    }
+
+    if (bursts.length === 0) {
+      return { count: 0, averageLength: 0, longestLength: 0 };
+    }
+
+    const averageLength = bursts.reduce((sum, burst) => sum + burst, 0) / bursts.length;
+    const longestLength = Math.max(...bursts);
+
+    return {
+      count: bursts.length,
+      averageLength: Math.round(averageLength * 10) / 10,
+      longestLength: longestLength
+    };
+  }
+
+  /**
+   * Analyze typing rhythm consistency
+   */
+  analyzeRhythm(events) {
+    const intervals = [];
+    
+    for (let i = 1; i < events.length; i++) {
+      const timeDiff = events[i].timeSinceLastKeyStroke;
+      // Only include normal typing intervals (not pauses or very rapid bursts)
+      if (timeDiff > 50 && timeDiff < 1000) {
+        intervals.push(timeDiff);
+      }
+    }
+
+    if (intervals.length < 3) {
+      return { consistency: 0, variance: 0 };
+    }
+
+    // Calculate variance and consistency
+    const mean = intervals.reduce((sum, interval) => sum + interval, 0) / intervals.length;
+    const variance = intervals.reduce((sum, interval) => sum + Math.pow(interval - mean, 2), 0) / intervals.length;
+    const standardDeviation = Math.sqrt(variance);
+    
+    // Consistency score (0-100, lower variance = higher consistency)
+    const coefficientOfVariation = standardDeviation / mean;
+    const consistency = Math.max(0, 100 - (coefficientOfVariation * 50));
+
+    return {
+      consistency: Math.round(consistency),
+      variance: Math.round(variance)
+    };
+  }
+
+  /**
+   * Analyze typing errors and corrections
+   */
+  analyzeErrors(events) {
+    const backspaceCount = events.filter(e => e.isBackspace).length;
+    const deleteCount = events.filter(e => e.isDelete).length;
+    const totalCorrections = backspaceCount + deleteCount;
+    const correctionRatio = events.length > 0 ? totalCorrections / events.length : 0;
+    
+    // Calculate accuracy percentage (100% - error percentage)
+    const errorPercentage = correctionRatio * 100;
+    const accuracyPercentage = Math.max(0, 100 - errorPercentage);
+
+    return {
+      backspaceCount,
+      deleteCount,
+      totalCorrections,
+      correctionRatio: Math.round(correctionRatio * 1000) / 1000,
+      accuracy: {
+        percentage: Math.round(accuracyPercentage * 100) / 100,
+        errorRate: Math.round(errorPercentage * 100) / 100
+      }
+    };
+  }
+
+  /**
+   * Calculate overall productivity score
+   */
+  calculateProductivity(metrics) {
+    const { typingSpeed, rhythm, errors } = metrics;
+    
+    // Speed component (0-40 points)
+    const speedScore = Math.min(40, (typingSpeed.cpm / 60) * 40);
+    
+    // Consistency component (0-30 points)
+    const consistencyScore = (rhythm.consistency / 100) * 30;
+    
+    // Error penalty (0-30 points, fewer errors = higher score)
+    const errorScore = Math.max(0, 30 - (errors.correctionRatio * 100));
+    
+    const totalScore = speedScore + consistencyScore + errorScore;
+    const flowState = typingSpeed.cpm > this.options.flowStateThreshold && rhythm.consistency > 60;
+
+    return {
+      score: Math.round(totalScore),
+      flowState,
+      speedComponent: Math.round(speedScore),
+      consistencyComponent: Math.round(consistencyScore),
+      errorComponent: Math.round(errorScore)
+    };
+  }
+
+  /**
+   * Calculate session statistics
+   */
+  calculateSessionStats(events) {
+    if (events.length === 0) {
+      return { duration: 0, totalKeystrokes: 0, productiveKeystrokes: 0 };
+    }
+
+    const duration = events[events.length - 1].timestamp - events[0].timestamp;
+    const totalKeystrokes = events.length;
+    const productiveKeystrokes = events.filter(e => 
+      e.isPrintable && !e.isBackspace && !e.isDelete && !e.isNavigation
+    ).length;
+
+    return {
+      duration: Math.round(duration / 1000), // seconds
+      totalKeystrokes,
+      productiveKeystrokes
+    };
+  }
+
+  /**
+   * Generate real-time insights and suggestions
+   */
+  generateInsights() {
+    const insights = [];
+    const suggestions = [];
+    const { typingSpeed, pauses, rhythm, errors, productivity } = this.liveMetrics;
+
+    // Speed insights
+    if (typingSpeed.cpm > 80) {
+      insights.push("Excellent typing speed! You're in the flow.");
+    } else if (typingSpeed.cpm < 20) {
+      suggestions.push("Take your time to think through the problem before coding.");
+    }
+
+    // Pause insights
+    if (pauses.count > 10) {
+      suggestions.push("Frequent pauses detected. Consider breaking the problem into smaller steps.");
+    } else if (pauses.averageDuration > 5000) {
+      insights.push("Long thinking pauses - you're carefully considering your approach.");
+    }
+
+    // Rhythm insights
+    if (rhythm.consistency > 80) {
+      insights.push("Very consistent typing rhythm - great focus!");
+    } else if (rhythm.consistency < 40) {
+      suggestions.push("Try to maintain a steady typing pace for better flow.");
+    }
+
+    // Error insights
+    if (errors.correctionRatio > 0.3) {
+      suggestions.push("High correction ratio. Consider slowing down to reduce typos.");
+    } else if (errors.correctionRatio < 0.1) {
+      insights.push("Low error rate - excellent typing accuracy!");
+    }
+
+    // Productivity insights
+    if (productivity.flowState) {
+      insights.push("You're in a flow state! Keep the momentum going.");
+    } else if (productivity.score < 30) {
+      suggestions.push("Consider taking a short break and refocusing.");
+    }
+
+    return { insights, suggestions };
+  }
+
+  /**
+   * Get current metrics
+   */
+  getMetrics() {
+    return { ...this.liveMetrics };
+  }
+
+  /**
+   * Get insights and suggestions
+   */
+  getInsights() {
+    return this.generateInsights();
+  }
+
+  /**
+   * Reset analyzer state
+   */
+  reset() {
+    this.events = [];
+    this.metrics = {
+      typingSpeed: { cpm: 0, wpm: 0 },
+      pauses: { count: 0, averageDuration: 0, longestDuration: 0 },
+      bursts: { count: 0, averageLength: 0, longestLength: 0 },
+      rhythm: { consistency: 0, variance: 0 },
+      errors: { backspaceCount: 0, correctionRatio: 0 },
+      accuracy: { percentage: 100, errorRate: 0 },
+      productivity: { score: 0, flowState: false },
+      session: { duration: 0, totalKeystrokes: 0, productiveKeystrokes: 0 }
+    };
+    this.liveMetrics = { ...this.metrics };
+    this.notifyListeners('reset', null);
+  }
+
+  /**
+   * Utility functions for key classification
+   */
+  isPrintableKey(key) {
+    if (!key) return false;
+    return key.length === 1 || ['Space', 'Tab', 'Enter'].includes(key);
+  }
+
+  isBackspaceKey(key) {
+    return key === 'Backspace';
+  }
+
+  isDeleteKey(key) {
+    return key === 'Delete';
+  }
+
+  isNavigationKey(key) {
+    return ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'].includes(key);
+  }
+
+  /**
+   * Event listener management
+   */
+  addListener(callback) {
+    this.listeners.add(callback);
+  }
+
+  removeListener(callback) {
+    this.listeners.delete(callback);
+  }
+
+  notifyListeners(eventType, data) {
+    this.listeners.forEach(callback => {
+      try {
+        callback(eventType, data);
+      } catch (error) {
+        console.error('Error in keystroke analyzer listener:', error);
+      }
+    });
+  }
+
+  /**
+   * Export session data for analysis
+   */
+  exportSessionData() {
+    return {
+      events: this.events,
+      metrics: this.metrics,
+      liveMetrics: this.liveMetrics,
+      insights: this.generateInsights(),
+      exportTimestamp: new Date().toISOString()
+    };
+  }
+}
