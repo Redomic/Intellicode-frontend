@@ -49,6 +49,16 @@ body {
   background: #27272a; /* zinc-800 */
 }
 
+/* Hide scrollbar utility class */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari, Opera */
+}
+
 ::-webkit-scrollbar-thumb {
   background: #52525b; /* zinc-600 */
   border-radius: 4px;

@@ -42,6 +42,18 @@ export const useStats = () => {
   return useAxios('/progress/stats');
 };
 
+// Roadmap-related hooks
+export const useRoadmaps = () => {
+  return useAxios('/roadmaps/progress');
+};
+
+export const useRoadmapQuestions = (course) => {
+  return useAxios(`/roadmaps/${course}/questions`, {
+    immediate: !!course,
+    deps: [course]
+  });
+};
+
 export default {
   useUser,
   useUpdateProfile,
@@ -50,4 +62,6 @@ export default {
   useSubmitSolution,
   useProgress,
   useStats,
+  useRoadmaps,
+  useRoadmapQuestions,
 };

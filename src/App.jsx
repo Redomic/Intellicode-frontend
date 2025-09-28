@@ -10,6 +10,7 @@ import RegisterPage from './pages/Auth/RegisterPage';
 import DashboardPage from './pages/Dashboard/DashboardPage';
 import CodingPracticePage from './pages/Coding/CodingPracticePage';
 import ProfilePage from './pages/Profile/ProfilePage';
+import RoadmapPage from './pages/Roadmap/RoadmapPage';
 
 function App() {
   return (
@@ -56,6 +57,14 @@ function App() {
           } 
         />
                 <Route
+          path="/challenge/:roadmap/:questionId"
+          element={
+            <ProtectedRoute requireAuth={true}>
+              <CodingPracticePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/practice"
           element={
             <ProtectedRoute requireAuth={true}>
@@ -68,6 +77,14 @@ function App() {
           element={
             <ProtectedRoute requireAuth={true}>
               <ProfilePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/roadmap/:course"
+          element={
+            <ProtectedRoute requireAuth={true}>
+              <RoadmapPage />
             </ProtectedRoute>
           }
         />

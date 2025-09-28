@@ -1,17 +1,26 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import screenfull from 'screenfull';
 import QuestionPanel from './QuestionPanel';
 import CodeEditor from './CodeEditor';
 import ProfileDropdown from '../ProfileDropdown';
 import AIAssistantOrb from '../ui/AIAssistantOrb';
 import FullscreenExitModal from './FullscreenExitModal';
+import SessionRecoveryModal from '../session/SessionRecoveryModal';
+import SessionNavbarCounter from '../session/SessionNavbarCounter';
 import { sampleQuestions } from '../../data/codingQuestions';
+import useSession from '../../hooks/useSession';
+import { SESSION_TYPES } from '../../services/sessionOrchestrator';
 
 /**
  * CodingInterface - LeetCode-like coding interface
  * Layout: Question panel on left, code editor on right
  */
-const CodingInterface = ({ questionId: initialQuestionId = null }) => {
+const CodingInterface = ({ 
+  questionId: initialQuestionId = null, 
+  roadmapQuestion = null, 
+  roadmapId = null 
+}) => {
   const location = useLocation();
   const navigate = useNavigate();
   const sessionConfig = location.state?.sessionConfig;
@@ -20,6 +29,7 @@ const CodingInterface = ({ questionId: initialQuestionId = null }) => {
   
   // Determine initial question ID based on route state or prop
   const getInitialQuestionId = () => {
+    if (roadmapQuestion) return roadmapQuestion.key || roadmapQuestion._key;
     if (specificProblemId) return specificProblemId;
     if (initialQuestionId) return initialQuestionId;
     return sampleQuestions.length > 0 ? sampleQuestions[0].id : null;
@@ -27,7 +37,7 @@ const CodingInterface = ({ questionId: initialQuestionId = null }) => {
   
   const [selectedQuestionId, setSelectedQuestionId] = useState(getInitialQuestionId());
   const [language, setLanguage] = useState('python');
-  const [isFullscreen, setIsFullscreen] = useState(sessionConfig?.fullscreenActivated || false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [showExitModal, setShowExitModal] = useState(false);
   const [sessionStartTime] = useState(Date.now());
   const [userTriedToExit, setUserTriedToExit] = useState(false);
@@ -36,14 +46,151 @@ const CodingInterface = ({ questionId: initialQuestionId = null }) => {
   const [retryCount, setRetryCount] = useState(0);
   const [isPermissionDenied, setIsPermissionDenied] = useState(false);
   const [isAttemptingReturn, setIsAttemptingReturn] = useState(false);
+  const [periodicCheckCount, setPeriodicCheckCount] = useState(0);
+  
+  // Session management
+  const {
+    currentSession,
+    isActive: isSessionActive,
+    isPaused: isSessionPaused,
+    needsRecovery,
+    recoveryData,
+    startSession,
+    endSession,
+    pauseSession,
+    resumeSession,
+    trackCodeChange,
+    trackTestRun,
+    trackHintUsed,
+    trackSolutionSubmitted,
+    recoverSession,
+    dismissRecovery,
+    sessionProgress,
+    liveMetrics,
+    isStarting: isStartingSession,
+    isResuming: isResumingSession
+  } = useSession();
   
   // Refs for cleanup and timing
   const retryTimeoutRef = useRef(null);
   const enforcementIntervalRef = useRef(null);
   const lastUserActionRef = useRef(Date.now());
   const lastAttemptRef = useRef(0);
+  const sessionStartedRef = useRef(false);
+  const fullscreenCheckTimeoutRef = useRef(null);
 
-  const selectedQuestion = sampleQuestions.find(q => q.id === selectedQuestionId);
+  // Convert roadmap question to sampleQuestion format for compatibility
+  const convertRoadmapQuestion = (roadmapQ) => {
+    if (!roadmapQ) return null;
+    
+    // Parse topics if it's a JSON string
+    let parsedTopics = [];
+    if (roadmapQ.a2z_topics) {
+      try {
+        const topicsArray = JSON.parse(roadmapQ.a2z_topics);
+        parsedTopics = topicsArray.map(t => t.label || t.value || t);
+      } catch (e) {
+        parsedTopics = roadmapQ.topics || [];
+      }
+    } else {
+      parsedTopics = roadmapQ.topics || [];
+    }
+    
+    return {
+      id: roadmapQ.key || roadmapQ._key || roadmapQ.question_id,
+      title: roadmapQ.leetcode_title || roadmapQ.original_title || 'Coding Challenge',
+      difficulty: roadmapQ.leetcode_difficulty || roadmapQ.difficulty || 'medium',
+      description: roadmapQ.problem_statement_html || roadmapQ.problem_statement_text || roadmapQ.problem_statement || 'Problem description not available.',
+      examples: roadmapQ.examples || [],
+      constraints: roadmapQ.constraints || [],
+      hints: roadmapQ.hints || [],
+      companies: roadmapQ.company_tags || roadmapQ.companies || [],
+      topics: parsedTopics,
+      tags: parsedTopics, // Also map to tags for compatibility
+      category: roadmapQ.a2z_step || roadmapQ.category || 'General',
+      step_number: roadmapQ.step_number,
+      approach: roadmapQ.approach,
+      time_complexity: roadmapQ.time_complexity,
+      space_complexity: roadmapQ.space_complexity,
+      solution: roadmapQ.solution,
+      // Additional roadmap-specific fields
+      leetcode_question_id: roadmapQ.leetcode_question_id,
+      leetcode_title_slug: roadmapQ.leetcode_title_slug,
+      lc_link: roadmapQ.lc_link,
+      a2z_step: roadmapQ.a2z_step,
+      a2z_sub_step: roadmapQ.a2z_sub_step,
+      is_paid_only: roadmapQ.is_paid_only,
+      similar_questions: roadmapQ.similar_questions || [],
+      code_templates: roadmapQ.code_templates || {},
+      default_code: roadmapQ.default_code || '',
+      sample_test_cases: roadmapQ.sample_test_cases || [],
+      // Add any other fields that might be needed
+      ...roadmapQ
+    };
+  };
+
+  const selectedQuestion = roadmapQuestion 
+    ? convertRoadmapQuestion(roadmapQuestion)
+    : sampleQuestions.find(q => q.id === selectedQuestionId);
+
+  // Helper to check if fullscreen is enabled for the session
+  const isFullscreenEnabled = useCallback(() => {
+    // Show fullscreen exit modal for any active session, not just explicitly configured ones
+    return (
+      sessionConfig?.fullscreenActivated || 
+      currentSession?.config?.enableFullscreen || 
+      (currentSession && isSessionActive) // Show for any active session
+    );
+  }, [sessionConfig?.fullscreenActivated, currentSession?.config?.enableFullscreen, currentSession, isSessionActive]);
+
+  // Initialize session when component mounts or when session config changes
+  useEffect(() => {
+    const initializeSession = async () => {
+      if (!selectedQuestion || sessionStartedRef.current) return;
+      
+      try {
+        const sessionType = roadmapQuestion ? 
+          SESSION_TYPES.ROADMAP_CHALLENGE : 
+          challengeType === 'daily' ? 
+            SESSION_TYPES.DAILY_CHALLENGE : 
+            SESSION_TYPES.PRACTICE;
+
+        const newSessionConfig = {
+          type: sessionType,
+          questionId: selectedQuestion.id,
+          questionTitle: selectedQuestion.title,
+          roadmapId: roadmapId,
+          difficulty: selectedQuestion.difficulty,
+          language: language,
+          enableBehaviorTracking: true,
+          enableFullscreen: sessionConfig?.fullscreenActivated || false,
+          timeCommitment: sessionConfig?.timeCommitment || '30min',
+          userAgreements: sessionConfig?.userAgreements || {},
+        };
+
+        const sessionId = await startSession(newSessionConfig);
+        sessionStartedRef.current = true;
+        console.log('📊 Session Started - ID:', sessionId);
+        console.log('📊 Session Config:', newSessionConfig);
+      } catch (error) {
+        console.error('Failed to initialize coding session:', error);
+      }
+    };
+
+    // Only start session if we don't have one and don't need recovery
+    if (!currentSession && !needsRecovery) {
+      initializeSession();
+    }
+  }, [selectedQuestion, roadmapQuestion, challengeType, roadmapId, language, sessionConfig, currentSession, needsRecovery, startSession]);
+
+  // Handle session recovery on mount
+  useEffect(() => {
+    if (needsRecovery && recoveryData) {
+      // Show recovery modal - it will handle the UI
+      console.log('Session recovery needed:', recoveryData);
+      console.log('Current Session ID:', currentSession?.id || 'No current session');
+    }
+  }, [needsRecovery, recoveryData, currentSession?.id]);
 
   const handleQuestionChange = (questionId) => {
     setSelectedQuestionId(questionId);
@@ -51,16 +198,23 @@ const CodingInterface = ({ questionId: initialQuestionId = null }) => {
 
   const handleLanguageChange = (newLanguage) => {
     setLanguage(newLanguage);
+    
+    // Track language change in session
+    if (currentSession) {
+      try {
+        trackEvent('language_changed', { 
+          from: language, 
+          to: newLanguage 
+        });
+      } catch (error) {
+        console.warn('Failed to track language change event:', error);
+      }
+    }
   };
 
-  // Check if currently in fullscreen (utility function)
+  // Check if currently in fullscreen using screenfull (utility function)
   const getCurrentFullscreenState = useCallback(() => {
-    return !!(
-      document.fullscreenElement ||
-      document.webkitFullscreenElement ||
-      document.mozFullScreenElement ||
-      document.msFullscreenElement
-    );
+    return screenfull.isEnabled && screenfull.isFullscreen;
   }, []);
 
   // Check if user is considered "present" (tab visible and window focused)
@@ -78,11 +232,15 @@ const CodingInterface = ({ questionId: initialQuestionId = null }) => {
       clearInterval(enforcementIntervalRef.current);
       enforcementIntervalRef.current = null;
     }
+    if (fullscreenCheckTimeoutRef.current) {
+      clearTimeout(fullscreenCheckTimeoutRef.current);
+      fullscreenCheckTimeoutRef.current = null;
+    }
   }, []);
 
   // Robust auto-return to fullscreen with intelligent retry logic
   const attemptFullscreenReturn = useCallback(async () => {
-    if (!sessionConfig?.fullscreenActivated || userTriedToExit || isPermissionDenied || isAttemptingReturn) {
+    if (!isFullscreenEnabled() || userTriedToExit || isPermissionDenied || isAttemptingReturn) {
       return false;
     }
 
@@ -150,35 +308,31 @@ const CodingInterface = ({ questionId: initialQuestionId = null }) => {
       
       return false;
     }
-  }, [sessionConfig?.fullscreenActivated, userTriedToExit, isPermissionDenied, isAttemptingReturn, isUserPresent, getCurrentFullscreenState, retryCount]);
+  }, [isFullscreenEnabled, userTriedToExit, isPermissionDenied, isAttemptingReturn, isUserPresent, getCurrentFullscreenState, retryCount]);
 
   // Standard fullscreen entry (for manual calls)
   const enterFullscreen = useCallback(async () => {
     clearRetryTimers();
     setRetryCount(0);
-    setIsPermissionDenied(false); // Reset permission state on manual entry
+    setIsPermissionDenied(false);
     setIsAttemptingReturn(false);
     lastUserActionRef.current = Date.now();
     
     try {
-      const element = document.documentElement;
-      if (element.requestFullscreen) {
-        await element.requestFullscreen();
-      } else if (element.webkitRequestFullscreen) {
-        await element.webkitRequestFullscreen();
-      } else if (element.mozRequestFullScreen) {
-        await element.mozRequestFullScreen();
-      } else if (element.msRequestFullscreen) {
-        await element.msRequestFullscreen();
+      if (screenfull.isEnabled) {
+        await screenfull.request();
+        setUserTriedToExit(false);
+        return true;
       } else {
-        throw new Error('Fullscreen API not supported');
+        console.warn('Fullscreen not supported by browser');
+        return false;
       }
-      // Don't set state here - let the event listener handle it
-      setUserTriedToExit(false);
     } catch (error) {
       console.warn('Failed to enter fullscreen:', error);
-      // Fallback to CSS fullscreen only if API is not supported
-      setIsFullscreen(true);
+      if (error.name === 'NotAllowedError') {
+        setIsPermissionDenied(true);
+      }
+      return false;
     }
   }, [clearRetryTimers]);
 
@@ -187,28 +341,22 @@ const CodingInterface = ({ questionId: initialQuestionId = null }) => {
     lastUserActionRef.current = Date.now();
     
     try {
-      if (document.exitFullscreen) {
-        await document.exitFullscreen();
-      } else if (document.webkitExitFullscreen) {
-        await document.webkitExitFullscreen();
-      } else if (document.mozCancelFullScreen) {
-        await document.mozCancelFullScreen();
-      } else if (document.msExitFullscreen) {
-        await document.msExitFullscreen();
+      if (screenfull.isEnabled && screenfull.isFullscreen) {
+        await screenfull.exit();
+        return true;
       } else {
-        throw new Error('Exit fullscreen API not supported');
+        console.warn('Not in fullscreen mode or not supported');
+        return false;
       }
-      // Don't set state here - let the event listener handle it
     } catch (error) {
       console.warn('Failed to exit fullscreen:', error);
-      // Only set state if API call failed
-      setIsFullscreen(false);
+      return false;
     }
   }, [clearRetryTimers]);
 
   // Start fullscreen enforcement (runs periodically to check if we need to return)
   const startFullscreenEnforcement = useCallback(() => {
-    if (!sessionConfig?.fullscreenActivated || enforcementIntervalRef.current || isPermissionDenied) {
+    if (!isFullscreenEnabled() || enforcementIntervalRef.current || isPermissionDenied) {
       return;
     }
 
@@ -227,7 +375,7 @@ const CodingInterface = ({ questionId: initialQuestionId = null }) => {
         attemptFullscreenReturn();
       }
     }, 10000); // Check every 10 seconds (much less aggressive)
-  }, [sessionConfig?.fullscreenActivated, userTriedToExit, isPermissionDenied, isAttemptingReturn, isUserPresent, getCurrentFullscreenState, attemptFullscreenReturn]);
+  }, [isFullscreenEnabled, userTriedToExit, isPermissionDenied, isAttemptingReturn, isUserPresent, getCurrentFullscreenState, attemptFullscreenReturn]);
 
   // Stop fullscreen enforcement
   const stopFullscreenEnforcement = useCallback(() => {
@@ -237,84 +385,138 @@ const CodingInterface = ({ questionId: initialQuestionId = null }) => {
     setIsAttemptingReturn(false);
   }, [clearRetryTimers]);
 
-  const toggleFullscreen = useCallback(() => {
-    const currentlyFullscreen = !!(
-      document.fullscreenElement ||
-      document.webkitFullscreenElement ||
-      document.mozFullScreenElement ||
-      document.msFullscreenElement
-    );
-
-    if (currentlyFullscreen) {
-      exitFullscreen();
-    } else {
-      enterFullscreen();
+  const toggleFullscreen = useCallback(async () => {
+    try {
+      if (screenfull.isEnabled) {
+        await screenfull.toggle();
+      } else {
+        console.warn('Fullscreen not supported by browser');
+      }
+    } catch (error) {
+      console.warn('Failed to toggle fullscreen:', error);
     }
-  }, [enterFullscreen, exitFullscreen]);
+  }, []);
 
-  // Handle fullscreen change events
+  // Simple fullscreen state checker using screenfull
+  const checkFullscreenState = useCallback(() => {
+    return screenfull.isEnabled && screenfull.isFullscreen;
+  }, []);
+
+  // Screenfull change handler - much simpler and more reliable
+  const handleScreenfullChange = useCallback(() => {
+    const isCurrentlyFullscreen = screenfull.isEnabled && screenfull.isFullscreen;
+    
+    // Check if this is an unexpected exit (user pressed Esc/F11, not intentional)
+    const wasFullscreen = isFullscreen;
+    const isUnexpectedExit = wasFullscreen && !isCurrentlyFullscreen && !userTriedToExit;
+    const hasActiveSession = currentSession && isSessionActive;
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🖥️ Screenfull change detected:', {
+        wasFullscreen,
+        isCurrentlyFullscreen,
+        isUnexpectedExit,
+        hasActiveSession,
+        userTriedToExit,
+        screenfullEnabled: screenfull.isEnabled,
+        currentSession: currentSession?.id || 'None',
+        isSessionActive,
+        sessionStartedRef: sessionStartedRef.current
+      });
+    }
+
+    // Update the fullscreen state
+    setIsFullscreen(isCurrentlyFullscreen);
+
+    // MODIFIED: Show modal for unexpected exits even without active session if user was in fullscreen
+    // This handles cases where session might not be properly initialized yet
+    if (isUnexpectedExit) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('📱 Showing fullscreen exit modal - unexpected exit detected');
+        if (!hasActiveSession) {
+          console.log('⚠️ No active session but showing modal anyway for unexpected fullscreen exit');
+        }
+      }
+      setShowExitModal(true);
+      // Start enforcement to try to get back to fullscreen if configured
+      if (isFullscreenEnabled()) {
+        startFullscreenEnforcement();
+      }
+    }
+
+    // Reset user exit flag when entering fullscreen and stop any enforcement
+    if (!wasFullscreen && isCurrentlyFullscreen) {
+      setUserTriedToExit(false);
+      setRetryCount(0);
+      clearRetryTimers();
+      setShowExitModal(false);
+    }
+
+    // Start enforcement when focused session begins in fullscreen
+    if (sessionConfig?.fullscreenActivated && isCurrentlyFullscreen && !userTriedToExit) {
+      startFullscreenEnforcement();
+    }
+  }, [isFullscreen, userTriedToExit, currentSession, isSessionActive, isFullscreenEnabled, startFullscreenEnforcement, clearRetryTimers, sessionConfig?.fullscreenActivated]);
+
+  // Handle fullscreen change events using screenfull - much cleaner!
   useEffect(() => {
-    const handleFullscreenChange = () => {
-      const isCurrentlyFullscreen = !!(
-        document.fullscreenElement ||
-        document.webkitFullscreenElement ||
-        document.mozFullScreenElement ||
-        document.msFullscreenElement
-      );
+    if (screenfull.isEnabled) {
+      screenfull.on('change', handleScreenfullChange);
+      screenfull.on('error', (event) => {
+        console.error('Screenfull error:', event);
+        if (event.type === 'NotAllowedError') {
+          setIsPermissionDenied(true);
+        }
+      });
 
-      // Check if this is an unexpected exit (user pressed Esc, not intentional)
-      const wasFullscreen = isFullscreen;
-      const isUnexpectedExit = wasFullscreen && !isCurrentlyFullscreen && !userTriedToExit;
+      return () => {
+        screenfull.off('change', handleScreenfullChange);
+        screenfull.off('error');
+      };
+    } else {
+      console.warn('Fullscreen API not supported by this browser');
+    }
+  }, [handleScreenfullChange]);
 
-      // Update the fullscreen state first
-      setIsFullscreen(isCurrentlyFullscreen);
+  // Periodic fullscreen check every 3 seconds as a safety net
+  useEffect(() => {
+    if (!screenfull.isEnabled) return;
 
-      // Show modal only for unexpected exits during focused sessions
-      if (isUnexpectedExit && sessionConfig?.fullscreenActivated) {
-        setShowExitModal(true);
-        // Start enforcement to try to get back to fullscreen
-        startFullscreenEnforcement();
+    const intervalId = setInterval(() => {
+      setPeriodicCheckCount(prev => prev + 1);
+      
+      const actualFullscreenState = screenfull.isFullscreen;
+      const currentReactState = isFullscreen;
+
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔄 Periodic 3s check #' + (periodicCheckCount + 1) + ':', {
+          actualFullscreenState,
+          currentReactState,
+          mismatch: actualFullscreenState !== currentReactState,
+          showExitModal
+        });
       }
 
-      // Reset user exit flag when entering fullscreen and stop any enforcement
-      if (!wasFullscreen && isCurrentlyFullscreen) {
-        setUserTriedToExit(false);
-        setRetryCount(0);
-        clearRetryTimers();
-        setShowExitModal(false);
+      // Only trigger handler if there's a mismatch between actual state and React state
+      if (actualFullscreenState !== currentReactState) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🔄 Periodic check detected fullscreen state mismatch - triggering handler');
+        }
+        handleScreenfullChange();
       }
-
-      // Start enforcement when focused session begins in fullscreen
-      if (sessionConfig?.fullscreenActivated && isCurrentlyFullscreen && !userTriedToExit) {
-        startFullscreenEnforcement();
-      }
-    };
-
-    // Add all browser-specific event listeners
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
-    document.addEventListener('msfullscreenchange', handleFullscreenChange);
+    }, 3000); // Check every 3 seconds
 
     return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
-      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
-      document.removeEventListener('msfullscreenchange', handleFullscreenChange);
+      clearInterval(intervalId);
     };
-  }, [isFullscreen, userTriedToExit, sessionConfig?.fullscreenActivated, startFullscreenEnforcement, clearRetryTimers]);
+  }, [isFullscreen, handleScreenfullChange, showExitModal, periodicCheckCount]);
 
   // Auto-enter fullscreen if session config requires it
   useEffect(() => {
     let timeoutId;
     
-    if (sessionConfig?.fullscreenActivated) {
-      const currentlyFullscreen = !!(
-        document.fullscreenElement ||
-        document.webkitFullscreenElement ||
-        document.mozFullScreenElement ||
-        document.msFullscreenElement
-      );
+    if (isFullscreenEnabled() && screenfull.isEnabled) {
+      const currentlyFullscreen = screenfull.isFullscreen;
       
       if (!currentlyFullscreen) {
         timeoutId = setTimeout(() => {
@@ -328,7 +530,7 @@ const CodingInterface = ({ questionId: initialQuestionId = null }) => {
         clearTimeout(timeoutId);
       }
     };
-  }, [sessionConfig?.fullscreenActivated, enterFullscreen]);
+  }, [isFullscreenEnabled, enterFullscreen]);
 
   // Track tab visibility (Page Visibility API)
   useEffect(() => {
@@ -337,7 +539,7 @@ const CodingInterface = ({ questionId: initialQuestionId = null }) => {
       setIsTabVisible(isVisible);
       
       // When user returns to tab, attempt fullscreen if needed (but less aggressively)
-      if (isVisible && sessionConfig?.fullscreenActivated && !userTriedToExit && !isPermissionDenied) {
+      if (isVisible && isFullscreenEnabled() && !userTriedToExit && !isPermissionDenied) {
         // Longer delay to let browser finish tab switch and avoid spam
         setTimeout(() => {
           if (!getCurrentFullscreenState() && isUserPresent() && !isAttemptingReturn) {
@@ -349,7 +551,7 @@ const CodingInterface = ({ questionId: initialQuestionId = null }) => {
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [sessionConfig?.fullscreenActivated, userTriedToExit, isPermissionDenied, isAttemptingReturn, getCurrentFullscreenState, isUserPresent, attemptFullscreenReturn]);
+  }, [isFullscreenEnabled, userTriedToExit, isPermissionDenied, isAttemptingReturn, getCurrentFullscreenState, isUserPresent, attemptFullscreenReturn]);
 
   // Track window focus (for app switching detection)
   useEffect(() => {
@@ -358,7 +560,7 @@ const CodingInterface = ({ questionId: initialQuestionId = null }) => {
       lastUserActionRef.current = Date.now();
       
       // When user returns to window, attempt fullscreen if needed (but less aggressively)
-      if (sessionConfig?.fullscreenActivated && !userTriedToExit && !isPermissionDenied) {
+      if (isFullscreenEnabled() && !userTriedToExit && !isPermissionDenied) {
         // Longer delay to let browser finish focus and avoid spam
         setTimeout(() => {
           if (!getCurrentFullscreenState() && isUserPresent() && !isAttemptingReturn) {
@@ -379,14 +581,22 @@ const CodingInterface = ({ questionId: initialQuestionId = null }) => {
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('blur', handleBlur);
     };
-  }, [sessionConfig?.fullscreenActivated, userTriedToExit, isPermissionDenied, isAttemptingReturn, getCurrentFullscreenState, isUserPresent, attemptFullscreenReturn]);
+  }, [isFullscreenEnabled, userTriedToExit, isPermissionDenied, isAttemptingReturn, getCurrentFullscreenState, isUserPresent, attemptFullscreenReturn]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       stopFullscreenEnforcement();
+      clearRetryTimers(); // This now includes fullscreen check timeout cleanup
+      
+      // End session if active (but only in production to avoid dev mode double cleanup)
+      if (currentSession && process.env.NODE_ENV === 'production') {
+        endSession('component_unmount').catch(error => {
+          console.error('Failed to end session on unmount:', error);
+        });
+      }
     };
-  }, [stopFullscreenEnforcement]);
+  }, [stopFullscreenEnforcement, clearRetryTimers, currentSession, endSession]);
 
   // Track user activity to determine if they're actively using the page
   useEffect(() => {
@@ -438,6 +648,51 @@ const CodingInterface = ({ questionId: initialQuestionId = null }) => {
     };
   }, [toggleFullscreen]);
 
+  // Session recovery handlers
+  const handleRecoverSession = useCallback(async () => {
+    try {
+      const success = await recoverSession();
+      if (success) {
+        console.log('Session recovered successfully');
+      }
+    } catch (error) {
+      console.error('Failed to recover session:', error);
+    }
+  }, [recoverSession]);
+
+  const handleDismissRecovery = useCallback(async () => {
+    try {
+      dismissRecovery();
+      
+      // Start a fresh session
+      if (selectedQuestion && !currentSession) {
+        const sessionType = roadmapQuestion ? 
+          SESSION_TYPES.ROADMAP_CHALLENGE : 
+          challengeType === 'daily' ? 
+            SESSION_TYPES.DAILY_CHALLENGE : 
+            SESSION_TYPES.PRACTICE;
+
+        const newSessionConfig = {
+          type: sessionType,
+          questionId: selectedQuestion.id,
+          questionTitle: selectedQuestion.title,
+          roadmapId: roadmapId,
+          difficulty: selectedQuestion.difficulty,
+          language: language,
+          enableBehaviorTracking: true,
+          enableFullscreen: sessionConfig?.fullscreenActivated || false,
+          timeCommitment: sessionConfig?.timeCommitment || '30min',
+          userAgreements: sessionConfig?.userAgreements || {},
+        };
+
+        await startSession(newSessionConfig);
+        sessionStartedRef.current = true;
+      }
+    } catch (error) {
+      console.error('Failed to dismiss recovery and start new session:', error);
+    }
+  }, [dismissRecovery, selectedQuestion, currentSession, roadmapQuestion, challengeType, roadmapId, language, sessionConfig, startSession]);
+
   // Modal handlers
   const handleContinueSession = useCallback(async () => {
     setShowExitModal(false);
@@ -450,6 +705,9 @@ const CodingInterface = ({ questionId: initialQuestionId = null }) => {
   }, [enterFullscreen, startFullscreenEnforcement]);
 
   const handleEndSession = useCallback(async () => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🛑 User chose to end session from fullscreen exit modal');
+    }
     setShowExitModal(false);
     setUserTriedToExit(true);
     stopFullscreenEnforcement();
@@ -459,9 +717,27 @@ const CodingInterface = ({ questionId: initialQuestionId = null }) => {
       await exitFullscreen();
     }
     
-    // Navigate back to dashboard
-    navigate('/dashboard');
-  }, [exitFullscreen, navigate, getCurrentFullscreenState, stopFullscreenEnforcement]);
+    // End the coding session
+    try {
+      await endSession('user_exit_fullscreen', {
+        reason: 'User chose to end session from fullscreen exit modal',
+        timeElapsed: Date.now() - sessionStartTime
+      });
+      sessionStartedRef.current = false;
+      if (process.env.NODE_ENV === 'development') {
+        console.log('✅ Session ended successfully');
+      }
+    } catch (error) {
+      console.error('Failed to end session properly:', error);
+    }
+    
+    // Navigate back to appropriate page
+    if (roadmapId) {
+      navigate(`/roadmap/${roadmapId}`);
+    } else {
+      navigate('/dashboard');
+    }
+  }, [endSession, exitFullscreen, navigate, getCurrentFullscreenState, stopFullscreenEnforcement, roadmapId, sessionStartTime]);
 
   // Format elapsed time - memoized to prevent unnecessary recalculations
   const getFormattedElapsedTime = useCallback(() => {
@@ -476,8 +752,8 @@ const CodingInterface = ({ questionId: initialQuestionId = null }) => {
     problemTitle: selectedQuestion?.title || 'Coding Challenge',
     timeElapsed: showExitModal ? getFormattedElapsedTime() : '00:00',
     language: language.charAt(0).toUpperCase() + language.slice(1),
-    challengeType: challengeType || 'Practice'
-  }), [selectedQuestion?.title, showExitModal, getFormattedElapsedTime, language, challengeType]);
+    challengeType: roadmapQuestion ? 'Roadmap Challenge' : (challengeType || 'Practice')
+  }), [selectedQuestion?.title, showExitModal, getFormattedElapsedTime, language, challengeType, roadmapQuestion]);
 
 
   if (!selectedQuestion) {
@@ -498,6 +774,49 @@ const CodingInterface = ({ questionId: initialQuestionId = null }) => {
         {/* Left Section */}
         <div className="flex items-center space-x-4 flex-1">
           <h1 className="text-lg font-medium text-zinc-100">IntelliCode</h1>
+          
+            {/* Session Counter */}
+            {currentSession && (
+              <SessionNavbarCounter
+                session={currentSession}
+                isActive={isSessionActive}
+                isPaused={isSessionPaused}
+                onPause={() => pauseSession('user_pause')}
+                onResume={resumeSession}
+              />
+            )}
+
+            {/* Development test buttons */}
+            {process.env.NODE_ENV === 'development' && !currentSession && (
+              <button
+                onClick={async () => {
+                  if (selectedQuestion) {
+                    const newSessionConfig = {
+                      type: SESSION_TYPES.PRACTICE,
+                      questionId: selectedQuestion.id,
+                      questionTitle: selectedQuestion.title,
+                      difficulty: selectedQuestion.difficulty,
+                      language: language,
+                      enableBehaviorTracking: true,
+                      enableFullscreen: false,
+                      timeCommitment: '30min',
+                      userAgreements: {},
+                    };
+                    try {
+                      await startSession(newSessionConfig);
+                      sessionStartedRef.current = true;
+                      console.log('🔧 Manual session started');
+                    } catch (error) {
+                      console.error('Failed to start manual session:', error);
+                    }
+                  }
+                }}
+                className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded"
+                title="Manually Start Session"
+              >
+                Start Session
+              </button>
+            )}
         </div>
 
         {/* Center Section - AI Assistant */}
@@ -568,8 +887,10 @@ const CodingInterface = ({ questionId: initialQuestionId = null }) => {
         <div className="w-1/2 border-r border-zinc-700 overflow-hidden">
           <QuestionPanel 
             question={selectedQuestion}
-            onQuestionChange={handleQuestionChange}
-            availableQuestions={sampleQuestions}
+            onQuestionChange={roadmapQuestion ? null : handleQuestionChange} // Disable question switching for roadmap challenges
+            availableQuestions={roadmapQuestion ? [] : sampleQuestions} // No question list for roadmap challenges
+            isRoadmapChallenge={!!roadmapQuestion}
+            roadmapId={roadmapId}
           />
         </div>
 
@@ -590,6 +911,31 @@ const CodingInterface = ({ questionId: initialQuestionId = null }) => {
         onEndSession={handleEndSession}
         sessionInfo={sessionInfo}
       />
+
+      {/* Session Recovery Modal */}
+      <SessionRecoveryModal
+        isOpen={needsRecovery && !!recoveryData}
+        recoveryData={recoveryData}
+        onRecover={handleRecoverSession}
+        onDismiss={handleDismissRecovery}
+        isRecovering={isResumingSession}
+      />
+      
+      {/* Debug info - remove in production */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="fixed bottom-4 left-4 bg-black/90 text-white text-xs p-3 rounded-lg z-50 max-w-md border border-zinc-600">
+          <div className="font-bold text-blue-300 mb-2">🔧 Development Debug Panel</div>
+          <div>📊 Session ID: {currentSession?.id || 'None'}</div>
+          <div>⚡ Status: Active={String(isSessionActive)} | Paused={String(isSessionPaused)}</div>
+          <div>🔧 Session: Started={String(sessionStartedRef.current)} | Type={currentSession?.type || 'None'}</div>
+          <div>🔄 Recovery: needsRecovery={String(needsRecovery)} | hasData={String(!!recoveryData)}</div>
+          <div>🖥️ Fullscreen: React={String(isFullscreen)} | Actual={String(screenfull.isEnabled && screenfull.isFullscreen)} | Modal={String(showExitModal)}</div>
+          <div>📚 Screenfull: Enabled={String(screenfull.isEnabled)}</div>
+          <div>🎯 Question: {selectedQuestion?.title || 'None'}</div>
+          <div className="text-green-300 mt-1">✅ Screenfull.js + 3s Safety Check (#{periodicCheckCount})</div>
+        </div>
+      )}
+
     </div>
   );
 };

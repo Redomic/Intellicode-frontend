@@ -12,7 +12,7 @@ const Navigation = ({ className = '' }) => {
   const isAuthenticated = useSelector(selectIsAuthenticated);
 
   return (
-    <nav className={`px-6 py-4 border-b border-zinc-800 ${className}`}>
+    <nav className={`sticky top-0 z-50 bg-zinc-900/95 backdrop-blur-sm px-6 py-4 border-b border-zinc-800 ${className}`}>
       <div className="max-w-6xl mx-auto flex justify-between items-center">
         {/* Logo */}
         <Link 

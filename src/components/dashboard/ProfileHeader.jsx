@@ -5,11 +5,12 @@ import { selectIsAuthenticated } from '../../store/userSlice';
 import { useGetProfileSummary } from '../../services/api';
 import SkeletonLoader from '../ui/SkeletonLoader';
 import LoadingSpinner from '../ui/LoadingSpinner';
+import RoadmapTracker from '../../utils/roadmapTracker';
 
 /**
  * ProfileHeader - GitHub-style profile header with user info and rating
  */
-const ProfileHeader = ({ user, onStartChallenge }) => {
+const ProfileHeader = ({ user, onStartChallenge, nextLevelInfo }) => {
   // Countdown timer state
   const [timeUntilMidnight, setTimeUntilMidnight] = useState('');
   
@@ -155,53 +156,92 @@ const ProfileHeader = ({ user, onStartChallenge }) => {
           </div>
         </div>
 
-        {/* Daily Challenge Box */}
+        {/* Challenge Box */}
         <div className="md:min-w-[280px] ml-auto">
-          <div className="bg-gradient-to-r from-orange-900/20 to-orange-800/20 border border-orange-700/30 rounded-lg p-3">
-            <div className="mb-2">
-              <h3 className="text-orange-400 font-medium text-sm">Ready for today's challenge?</h3>
-            </div>
+          {Object.keys(RoadmapTracker?.getActivatedRoadmapsSync() || {}).length === 0 ? (
+            // No active roadmaps state
+            <div className="bg-gradient-to-r from-zinc-900/50 to-zinc-800/50 border border-zinc-700/50 rounded-lg p-3">
+              <div className="mb-2">
+                <h3 className="text-zinc-400 font-medium text-sm">No active roadmaps</h3>
+              </div>
 
-            <div className="mb-3 space-y-1">
-              <div className="flex items-center text-xs text-white">
-                <svg className="w-3 h-3 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                ~30 min estimated
-              </div>
-              <div className="flex items-center text-xs text-white">
-                <svg className="w-3 h-3 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                </svg>
-                Behavior tracking enabled
-              </div>
-              <div className="flex items-center text-xs text-white">
-                <svg className="w-3 h-3 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                Two Sum - Arrays & Hash Tables
-              </div>
-            </div>
-
-            <button
-              onClick={onStartChallenge}
-              className="
-                w-full px-4 py-2 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 
-                text-white rounded-lg transition-all duration-200 font-medium transform hover:scale-105
-                focus:outline-none focus:ring-2 focus:ring-orange-500 shadow-lg hover:shadow-orange-500/25
-              "
-            >
-              <div className="flex items-center justify-between">
-                <div className="text-white text-xs font-mono bg-black/20 px-2 py-0.5 rounded">
-                  {timeUntilMidnight}
+              <div className="mb-3 space-y-1">
+                <div className="flex items-center justify-center py-4">
+                  <svg className="w-12 h-12 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
                 </div>
-                <span className="flex-1 text-center">Start Challenge</span>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                </svg>
+                <p className="text-xs text-zinc-500 text-center px-2">
+                  Activate a roadmap below to start your coding journey
+                </p>
               </div>
-            </button>
-          </div>
+
+              <button
+                disabled={true}
+                className="w-full px-4 py-2 rounded-lg bg-zinc-800 border border-zinc-700/50 text-zinc-500 cursor-not-allowed font-medium text-sm"
+              >
+                Activate Roadmap
+              </button>
+            </div>
+          ) : (
+            // Active roadmap state
+            <div className="bg-gradient-to-r from-orange-900/20 to-orange-800/20 border border-orange-700/30 rounded-lg p-3">
+              <div className="mb-2">
+                <h3 className="text-orange-400 font-medium text-sm">
+                  {nextLevelInfo ? 'Continue your roadmap' : "Ready for today's challenge?"}
+                </h3>
+              </div>
+
+              <div className="mb-3 space-y-1">
+                <div className="flex items-center text-xs text-white">
+                  <svg className="w-3 h-3 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  ~30 min estimated
+                </div>
+                <div className="flex items-center text-xs text-white">
+                  <svg className="w-3 h-3 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                  Behavior tracking enabled
+                </div>
+                <div className="flex items-center text-xs text-white">
+                  <svg className="w-3 h-3 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  {nextLevelInfo 
+                    ? `Step ${nextLevelInfo.question.step_number}: ${nextLevelInfo.question.leetcode_title || nextLevelInfo.question.original_title}`
+                    : 'Two Sum - Arrays & Hash Tables'
+                  }
+                </div>
+                {nextLevelInfo && (
+                  <div className="flex items-center text-xs text-green-400">
+                    <svg className="w-3 h-3 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    {nextLevelInfo.courseName}
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={onStartChallenge}
+                className="w-full px-4 py-2 rounded-lg transition-all duration-200 font-medium transform focus:outline-none focus:ring-2 focus:ring-orange-500 shadow-lg bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white hover:scale-105 hover:shadow-orange-500/25"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="text-white text-xs font-mono bg-black/20 px-2 py-0.5 rounded">
+                    {timeUntilMidnight}
+                  </div>
+                  <span className="flex-1 text-center text-sm">
+                    Start Challenge
+                  </span>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                  </svg>
+                </div>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

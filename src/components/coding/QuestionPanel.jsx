@@ -5,7 +5,14 @@ import LoadingSpinner from '../ui/LoadingSpinner';
 /**
  * QuestionPanel - Left panel displaying coding question details
  */
-const QuestionPanel = ({ question, onQuestionChange, availableQuestions, isLoading = false }) => {
+const QuestionPanel = ({ 
+  question, 
+  onQuestionChange, 
+  availableQuestions, 
+  isLoading = false,
+  isRoadmapChallenge = false,
+  roadmapId = null
+}) => {
   const [activeTab, setActiveTab] = useState('problem');
 
   const getDifficultyColor = (difficulty) => {
@@ -19,6 +26,53 @@ const QuestionPanel = ({ question, onQuestionChange, availableQuestions, isLoadi
       default:
         return 'text-zinc-400 bg-zinc-400/10 border-zinc-400/20';
     }
+  };
+
+  // Extract just the problem description from HTML, removing examples and constraints
+  const extractProblemDescription = (htmlContent) => {
+    if (!htmlContent) return 'Problem description not available.';
+    
+    // Create a temporary div to parse HTML
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = htmlContent;
+    
+    // Remove example sections
+    const exampleElements = tempDiv.querySelectorAll('p[class*="example"], .example');
+    exampleElements.forEach(el => el.remove());
+    
+    // Remove constraint sections  
+    const constraintElements = tempDiv.querySelectorAll('p:last-child, ul:last-child');
+    constraintElements.forEach(el => {
+      if (el.textContent.toLowerCase().includes('constraint')) {
+        el.remove();
+      }
+    });
+    
+    // Remove any pre elements (usually examples)
+    const preElements = tempDiv.querySelectorAll('pre');
+    preElements.forEach(el => el.remove());
+    
+    // Get the cleaned HTML
+    let cleanHtml = tempDiv.innerHTML;
+    
+    // Remove common example/constraint patterns
+    cleanHtml = cleanHtml.replace(/<p><strong[^>]*>Example[^<]*<\/strong><\/p>[\s\S]*?(?=<p><strong[^>]*>Constraints|$)/gi, '');
+    cleanHtml = cleanHtml.replace(/<p><strong[^>]*>Constraints[^<]*<\/strong><\/p>[\s\S]*$/gi, '');
+    cleanHtml = cleanHtml.replace(/<p>&nbsp;<\/p>/gi, '');
+    
+    return cleanHtml || 'Problem description not available.';
+  };
+
+  // Format constraint text to fix mathematical notation
+  const formatConstraint = (constraint) => {
+    if (!constraint) return constraint;
+    
+    // Fix mathematical notation (231 -> 2^31)
+    return constraint
+      .replace(/231/g, '2³¹')
+      .replace(/-231/g, '-2³¹')
+      .replace(/\b31\b/g, '³¹')
+      .trim();
   };
 
   const tabs = [
@@ -91,11 +145,56 @@ const QuestionPanel = ({ question, onQuestionChange, availableQuestions, isLoadi
 
   return (
     <div className="h-full bg-zinc-900 flex flex-col">
+      {/* Global styles for HTML content */}
+      <style dangerouslySetInnerHTML={{
+        __html: `
+          .prose-content p {
+            margin-bottom: 1rem;
+            color: rgb(212 212 216);
+            line-height: 1.625;
+          }
+          .prose-content strong {
+            color: rgb(244 244 245);
+            font-weight: 600;
+          }
+          .prose-content code {
+            background-color: rgba(39, 39, 42, 0.8);
+            color: rgb(168, 162, 158);
+            padding: 0.125rem 0.25rem;
+            border-radius: 0.25rem;
+            font-family: ui-monospace, SFMono-Regular, monospace;
+            font-size: 0.875rem;
+          }
+          .prose-content sup {
+            font-size: 0.75rem;
+            vertical-align: super;
+          }
+          .prose-content ul, .prose-content ol {
+            margin-bottom: 1rem;
+            padding-left: 1.5rem;
+          }
+          .prose-content li {
+            color: rgb(212 212 216);
+            margin-bottom: 0.5rem;
+          }
+        `
+      }} />
+      
       {/* Question Header */}
       <div className="p-6 border-b border-zinc-700">
+        {isRoadmapChallenge && question.step_number && (
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xs text-zinc-500">Step {question.step_number}</span>
+            <span className="text-xs text-zinc-600">•</span>
+            <span className="text-xs text-blue-400 capitalize">
+              {roadmapId?.replace('-', ' ')} Challenge
+            </span>
+          </div>
+        )}
+        
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xl font-semibold text-zinc-100">
-            {question.id}. {question.title}
+            {isRoadmapChallenge ? question.title : `${question.id}. ${question.title}`}
           </h2>
           <span className={`
             px-2 py-1 text-xs font-medium rounded border
@@ -105,19 +204,48 @@ const QuestionPanel = ({ question, onQuestionChange, availableQuestions, isLoadi
           </span>
         </div>
         
-        {question.tags && question.tags.length > 0 && (
+        {/* Show topics for roadmap challenges, tags for regular challenges */}
+        {isRoadmapChallenge && question.topics && question.topics.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {question.topics.map((topic, index) => (
+              <span
+                key={index}
+                className="px-2 py-1 text-xs bg-blue-900/30 text-blue-300 rounded border border-blue-700/30"
+              >
+                {topic}
+              </span>
+            ))}
+          </div>
+        )}
+        
+        {!isRoadmapChallenge && question.tags && question.tags.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {question.tags.map((tag, index) => (
               <span
                 key={index}
-                className="
-                  px-2 py-1 text-xs bg-zinc-700 text-zinc-300 rounded
-                  border border-zinc-600
-                "
+                className="px-2 py-1 text-xs bg-zinc-700 text-zinc-300 rounded border border-zinc-600"
               >
                 {tag}
               </span>
             ))}
+          </div>
+        )}
+
+        {/* Additional roadmap info */}
+        {isRoadmapChallenge && (
+          <div className="mt-4 grid grid-cols-2 gap-4 text-xs">
+            {question.category && (
+              <div>
+                <span className="text-zinc-500">Category:</span>
+                <span className="text-zinc-300 ml-2">{question.category}</span>
+              </div>
+            )}
+            {question.companies && question.companies.length > 0 && (
+              <div>
+                <span className="text-zinc-500">Companies:</span>
+                <span className="text-zinc-300 ml-2">{question.companies.slice(0, 2).join(', ')}{question.companies.length > 2 ? '...' : ''}</span>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -150,77 +278,87 @@ const QuestionPanel = ({ question, onQuestionChange, availableQuestions, isLoadi
           <div className="space-y-8">
             {/* Description Section */}
             <div className="prose prose-invert max-w-none">
-              <div 
-                className="text-zinc-300 leading-relaxed space-y-4"
-                dangerouslySetInnerHTML={{ __html: question.description }}
-              />
+              <div className="text-zinc-300 leading-relaxed space-y-4">
+                {isRoadmapChallenge ? (
+                  // For roadmap challenges, extract and clean the problem description
+                  <div 
+                    className="problem-content prose-content"
+                    dangerouslySetInnerHTML={{ 
+                      __html: extractProblemDescription(question.description) 
+                    }}
+                  />
+                ) : (
+                  // For regular challenges, use the full description
+                  <div 
+                    className="prose-content"
+                    dangerouslySetInnerHTML={{ __html: question.description }}
+                  />
+                )}
+              </div>
+              
             </div>
 
             {/* Examples Section */}
             {question.examples && question.examples.length > 0 && (
-              <>
-                <div className="border-t border-zinc-700 pt-6">
-                  <h4 className="text-zinc-100 font-medium mb-4 text-lg">Examples</h4>
-                  <div className="space-y-6">
-                    {question.examples.map((example, index) => (
-                      <div key={index} className="bg-zinc-800 rounded-lg p-4 border border-zinc-700">
-                        <h5 className="text-zinc-100 font-medium mb-3">Example {index + 1}:</h5>
-                        
-                        <div className="space-y-3">
-                          <div>
-                            <span className="text-zinc-400 text-sm font-medium">Input:</span>
-                            <pre className="text-zinc-200 bg-zinc-900 p-3 rounded mt-1 text-sm overflow-x-auto">
-                              {example.input}
-                            </pre>
-                          </div>
-                          
-                          <div>
-                            <span className="text-zinc-400 text-sm font-medium">Output:</span>
-                            <pre className="text-zinc-200 bg-zinc-900 p-3 rounded mt-1 text-sm overflow-x-auto">
-                              {example.output}
-                            </pre>
-                          </div>
-                          
-                          {example.explanation && (
-                            <div>
-                              <span className="text-zinc-400 text-sm font-medium">Explanation:</span>
-                              <p className="text-zinc-300 text-sm mt-1 leading-relaxed">
-                                {example.explanation}
-                              </p>
-                            </div>
-                          )}
+              <div className="border-t border-zinc-700 pt-6">
+                <h4 className="text-zinc-100 font-medium mb-4 text-lg">Examples</h4>
+                <div className="space-y-6">
+                  {question.examples.map((example, index) => (
+                    <div key={index} className="bg-zinc-800 rounded-lg p-4 border border-zinc-700">
+                      <h5 className="text-zinc-100 font-medium mb-3">Example {index + 1}:</h5>
+                      
+                      <div className="space-y-3">
+                        <div>
+                          <span className="text-zinc-400 text-sm font-medium">Input:</span>
+                          <pre className="text-zinc-200 bg-zinc-900 p-3 rounded mt-1 text-sm overflow-x-auto">
+                            {example.input}
+                          </pre>
                         </div>
+                        
+                        <div>
+                          <span className="text-zinc-400 text-sm font-medium">Output:</span>
+                          <pre className="text-zinc-200 bg-zinc-900 p-3 rounded mt-1 text-sm overflow-x-auto">
+                            {example.output}
+                          </pre>
+                        </div>
+                        
+                        {example.explanation && (
+                          <div>
+                            <span className="text-zinc-400 text-sm font-medium">Explanation:</span>
+                            <p className="text-zinc-300 text-sm mt-1 leading-relaxed">
+                              {example.explanation}
+                            </p>
+                          </div>
+                        )}
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  ))}
                 </div>
-              </>
+              </div>
             )}
 
             {/* Constraints Section */}
             {question.constraints && question.constraints.length > 0 && (
-              <>
-                <div className="border-t border-zinc-700 pt-6">
-                  <h4 className="text-zinc-100 font-medium mb-4 text-lg">Constraints</h4>
-                  <div className="space-y-2">
-                    {question.constraints.map((constraint, index) => (
-                      <div key={index} className="flex items-start space-x-3">
-                        <span className="text-zinc-500 mt-1 text-sm">•</span>
-                        <code className="text-zinc-300 text-sm font-mono leading-relaxed">
-                          {constraint}
-                        </code>
-                      </div>
-                    ))}
-                  </div>
+              <div className="border-t border-zinc-700 pt-6">
+                <h4 className="text-zinc-100 font-medium mb-4 text-lg">Constraints</h4>
+                <div className="space-y-2">
+                  {question.constraints.map((constraint, index) => (
+                    <div key={index} className="flex items-start space-x-3">
+                      <span className="text-zinc-500 mt-1 text-sm">•</span>
+                      <code className="text-zinc-300 text-sm font-mono leading-relaxed">
+                        {formatConstraint(constraint)}
+                      </code>
+                    </div>
+                  ))}
                 </div>
-              </>
+              </div>
             )}
           </div>
         )}
       </div>
 
-      {/* Question Navigation */}
-      {availableQuestions && availableQuestions.length > 1 && (
+      {/* Question Navigation - Only show for non-roadmap challenges */}
+      {!isRoadmapChallenge && availableQuestions && availableQuestions.length > 1 && onQuestionChange && (
         <div className="border-t border-zinc-700 p-4">
           <div className="flex items-center justify-between">
             <button
