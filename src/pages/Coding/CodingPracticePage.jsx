@@ -3,6 +3,7 @@ import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import CodingInterface from '../../components/coding/CodingInterface';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import { useRoadmapQuestions } from '../../hooks/useAPI';
+import { sessionOrchestrator } from '../../services/sessionOrchestrator';
 
 /**
  * CodingPracticePage - Full page wrapper for the coding interface
@@ -19,6 +20,15 @@ const CodingPracticePage = () => {
   // Fetch roadmap questions if this is a roadmap challenge
   const { data: questionsData, loading: questionsLoading, error: questionsError } = useRoadmapQuestions(roadmap);
   const questions = questionsData || [];
+
+  useEffect(() => {
+    // On unmount, force the session orchestrator to reset.
+    // This is a crucial cleanup step to prevent stale session data
+    // from persisting across different user flows.
+    return () => {
+      sessionOrchestrator.forceResetState();
+    };
+  }, []);
 
   useEffect(() => {
     if (roadmap && questionId) {

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Editor from '@monaco-editor/react';
 import { useSubmitSolution } from '../../services/api';
 import useBehaviorTracking from '../../hooks/useBehaviorTracking';
+import useSession from '../../hooks/useSession';
 import BehaviorFeedback from './BehaviorFeedback';
 import BehaviorPrivacyControls from './BehaviorPrivacyControls';
 import { LoadingButton } from '../ui/InlineLoading';
@@ -23,11 +24,20 @@ const CodeEditor = ({
   const [showSettingsDropdown, setShowSettingsDropdown] = useState(false);
   const [showBehaviorFeedback, setShowBehaviorFeedback] = useState(process.env.NODE_ENV === 'development');
   const [showPrivacyControls, setShowPrivacyControls] = useState(false);
+  const [codeInitialized, setCodeInitialized] = useState(false);
   const editorRef = useRef(null);
   const monacoRef = useRef(null);
   
   // API hooks
   const submitSolutionHook = useSubmitSolution();
+  
+  // Session management
+  const {
+    currentSession,
+    needsRecovery,
+    recoveryData,
+    trackCodeChange
+  } = useSession();
   
   // Behavior tracking
   const behaviorTracking = useBehaviorTracking({
@@ -414,29 +424,72 @@ const CodeEditor = ({
     }
   };
 
-  // Update code when language or question changes
+  // Initialize code from session recovery or template
   useEffect(() => {
-    const newCode = getLanguageTemplate(language, question);
-    setCode(newCode);
-    setOutput('');
-    
-    // Update Monaco editor language
-    if (monacoRef.current && editorRef.current) {
-      const model = editorRef.current.getModel();
-      if (model) {
-        monacoRef.current.editor.setModelLanguage(model, language);
-        setupLanguageFeatures(monacoRef.current, language);
-      }
-    }
+    const initializeCode = async () => {
+      let codeToSet = '';
+      let shouldRestoreFromSession = false;
 
-    // Restart behavior tracking for new question (only if question ID changes)
-    if (question?.id && behaviorTracking.isTracking && 
-        behaviorTracking.currentSession?.questionKey !== String(question.id)) {
-      behaviorTracking.endTracking().then(() => {
-        behaviorTracking.startTracking(String(question.id));
-      });
-    }
-  }, [language, question?.id]); // Only depend on question ID, not the entire object
+      // Check if we need to recover code from session
+      if (needsRecovery && recoveryData?.lastCode?.code && 
+          recoveryData.sessionId === currentSession?.id &&
+          !codeInitialized) {
+        
+        codeToSet = recoveryData.lastCode.code;
+        shouldRestoreFromSession = true;
+        
+        console.log('🔄 Restoring code from session recovery:', {
+          sessionId: recoveryData.sessionId,
+          codeLength: codeToSet.length,
+          language: recoveryData.lastCode.language || language
+        });
+        
+      } else if (currentSession?.currentCode && !codeInitialized) {
+        // Try to restore from current session if available
+        codeToSet = currentSession.currentCode;
+        shouldRestoreFromSession = true;
+        
+        console.log('🔄 Restoring code from current session:', {
+          sessionId: currentSession.id,
+          codeLength: codeToSet.length
+        });
+        
+      } else {
+        // Use default template
+        codeToSet = getLanguageTemplate(language, question);
+        console.log('📝 Using default template for question:', question?.id);
+      }
+
+      setCode(codeToSet);
+      setOutput('');
+      setCodeInitialized(true);
+      
+      // Show restoration message if code was restored
+      if (shouldRestoreFromSession && codeToSet.trim() !== getLanguageTemplate(language, question).trim()) {
+        // You could show a toast notification here
+        console.log('✅ Code successfully restored from previous session');
+      }
+      
+      // Update Monaco editor language
+      if (monacoRef.current && editorRef.current) {
+        const model = editorRef.current.getModel();
+        if (model) {
+          monacoRef.current.editor.setModelLanguage(model, language);
+          setupLanguageFeatures(monacoRef.current, language);
+        }
+      }
+
+      // Restart behavior tracking for new question (only if question ID changes)
+      if (question?.id && behaviorTracking.isTracking && 
+          behaviorTracking.currentSession?.questionKey !== String(question.id)) {
+        behaviorTracking.endTracking().then(() => {
+          behaviorTracking.startTracking(String(question.id));
+        });
+      }
+    };
+
+    initializeCode();
+  }, [language, question?.id, needsRecovery, recoveryData, currentSession?.id]); // Added session dependencies
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -451,6 +504,18 @@ const CodeEditor = ({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showSettingsDropdown]);
+
+  // Track code changes for session persistence
+  useEffect(() => {
+    if (codeInitialized && currentSession && code) {
+      // Throttle code change tracking to avoid excessive API calls
+      const timeoutId = setTimeout(() => {
+        trackCodeChange(code, language);
+      }, 1000); // Wait 1 second after user stops typing
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [code, language, currentSession, codeInitialized, trackCodeChange]);
 
   const handleRunCode = async () => {
     setIsRunning(true);

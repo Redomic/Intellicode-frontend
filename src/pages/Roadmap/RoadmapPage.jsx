@@ -8,6 +8,7 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import { useRoadmapQuestions } from '../../hooks/useAPI';
 import LevelNode from '../../components/roadmap/LevelNode';
 import RoadmapTracker from '../../utils/roadmapTracker';
+import RoadmapChallengeModal from '../../components/roadmap/RoadmapChallengeModal';
 
 const RoadmapPage = () => {
   const { course } = useParams();
@@ -15,6 +16,8 @@ const RoadmapPage = () => {
   const { data: questionsData, loading, error } = useRoadmapQuestions(course);
   const [completedLevels, setCompletedLevels] = useState(new Set());
   const [unlockedLevels, setUnlockedLevels] = useState(new Set([1])); // First level is always unlocked
+  const [showChallengeModal, setShowChallengeModal] = useState(false);
+  const [selectedQuestion, setSelectedQuestion] = useState(null);
 
   const questions = questionsData || [];
   
@@ -83,11 +86,21 @@ const RoadmapPage = () => {
                    course.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
 
   const handleLevelClick = (question) => {
-    if (unlockedLevels.has(question.step_number)) {
-      // Navigate directly to challenge page with roadmap and question ID
-      const questionKey = question.key || question._key;
-      navigate(`/challenge/${course}/${questionKey}`);
+    if (!unlockedLevels.has(question.step_number)) {
+      return;
     }
+    setSelectedQuestion(question);
+    setShowChallengeModal(true);
+  };
+
+  const handleStartChallenge = (challengeData) => {
+    console.log('🚀 Starting challenge with config:', challengeData);
+    const questionKey = challengeData.question.key || challengeData.question._key;
+    navigate(`/challenge/${course}/${questionKey}`, {
+      state: {
+        sessionConfig: challengeData
+      }
+    });
   };
 
 
@@ -214,6 +227,17 @@ const RoadmapPage = () => {
         </div>
       </div>
 
+      {/* Challenge Start Modal */}
+      <RoadmapChallengeModal
+        isOpen={showChallengeModal}
+        onClose={() => {
+          setShowChallengeModal(false);
+          setSelectedQuestion(null);
+        }}
+        onStartChallenge={handleStartChallenge}
+        question={selectedQuestion}
+        isCompleted={selectedQuestion ? completedLevels.has(selectedQuestion.step_number) : false}
+      />
     </div>
   );
 };

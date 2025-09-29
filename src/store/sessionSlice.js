@@ -82,15 +82,15 @@ export const loadSessionHistory = createAsyncThunk(
   }
 );
 
-// Initial state
+// Initial state - ALWAYS start clean, let orchestrator sync asynchronously
 const initialState = {
   // Current session
-  currentSession: sessionOrchestrator.getCurrentSession(),
+  currentSession: null,
   
   // Session state
   isActive: false,
   isPaused: false,
-  needsRecovery: sessionOrchestrator.needsRecovery(),
+  needsRecovery: false,
   
   // Loading states
   isStarting: false,
@@ -106,8 +106,8 @@ const initialState = {
   liveMetrics: null,
   metricsHistory: [],
   
-  // Recovery data
-  recoveryData: sessionOrchestrator.getRecoveryData(),
+  // Recovery data (don't call async function directly - will be loaded on demand)
+  recoveryData: null,
   
   // Errors
   error: null,
@@ -301,13 +301,13 @@ const sessionSlice = createSlice({
     syncWithOrchestrator: (state) => {
       const currentSession = sessionOrchestrator.getCurrentSession();
       const needsRecovery = sessionOrchestrator.needsRecovery();
-      const recoveryData = sessionOrchestrator.getRecoveryData();
+      // Don't call async getRecoveryData here - it returns a Promise
+      // Recovery data will be loaded separately when needed
       
       state.currentSession = currentSession;
       state.isActive = currentSession?.state === SESSION_STATES.ACTIVE;
       state.isPaused = currentSession?.state === SESSION_STATES.PAUSED;
       state.needsRecovery = needsRecovery;
-      state.recoveryData = recoveryData;
       
       if (currentSession) {
         state.currentAnalytics = sessionOrchestrator.getSessionAnalytics();
@@ -359,13 +359,23 @@ const sessionSlice = createSlice({
         state.error = null;
       })
       .addCase(endSession.fulfilled, (state, action) => {
+        // COMPLETELY clear all session state - reset to initial state
         state.isEnding = false;
         state.currentSession = null;
         state.isActive = false;
         state.isPaused = false;
+        state.needsRecovery = false;
+        state.recoveryData = null;
         state.currentAnalytics = null;
         state.liveMetrics = null;
         state.sessionConfig = null;
+        state.showRecoveryModal = false;
+        state.showSessionModal = false;
+        state.showSessionTimer = false;
+        state.metricsHistory = [];
+        
+        // Clear any error state
+        state.error = null;
         
         if (action.payload) {
           state.sessionNotifications.push({
@@ -555,6 +565,12 @@ export const setupSessionOrchestratorSync = (dispatch) => {
   orchestratorListener = (eventType, data) => {
     try {
       switch (eventType) {
+        case 'INITIALIZED':
+          // Orchestrator finished async initialization, sync state
+          console.log('🔄 Orchestrator initialized, syncing Redux state');
+          dispatch(syncWithOrchestrator());
+          break;
+          
         case SESSION_EVENTS.STARTED:
           dispatch(syncWithOrchestrator());
           dispatch(addSessionNotification({

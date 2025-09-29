@@ -6,11 +6,11 @@ import { combineReducers } from '@reduxjs/toolkit';
 import userReducer from './userSlice';
 import sessionReducer from './sessionSlice';
 
-// Persist config
+// Persist config - only persist user data, sessions always fetched from backend
 const persistConfig = {
   key: 'intellit-root',
   storage,
-  whitelist: ['user', 'session'] // Persist user and session data
+  whitelist: ['user'] // Only persist user data, sessions are always fetched from backend
 };
 
 const rootReducer = combineReducers({

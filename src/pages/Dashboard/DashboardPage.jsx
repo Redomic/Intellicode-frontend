@@ -14,6 +14,7 @@ import RoadmapTracker from '../../utils/roadmapTracker';
 import { useRoadmapQuestions } from '../../hooks/useAPI';
 import useSession from '../../hooks/useSession';
 import SessionAnalytics from '../../components/session/SessionAnalytics';
+import sessionAPI from '../../services/sessionAPI';
 
 const DashboardPage = () => {
   const user = useSelector(selectCurrentUser);
@@ -62,13 +63,81 @@ const DashboardPage = () => {
     }
   }, [activeRoadmap, questionsData]);
 
-  const handleStartChallenge = () => {
-    if (nextLevelInfo) {
-      // User has an active roadmap, show roadmap challenge modal
-      setShowRoadmapModal(true);
-    } else {
-      // No active roadmap, show daily challenge modal
-      setShowChallengeModal(true);
+  const handleStartChallenge = async () => {
+    try {
+      console.log('🔍 Checking for active session before starting challenge...');
+      
+      // Check if there's an active session in the backend
+      const activeSession = await sessionAPI.getActiveSession();
+      
+      if (activeSession) {
+        console.log('✅ Active session found:', activeSession);
+        
+        // If there's a roadmap session, we need to find the question key
+        if (activeSession.roadmap_id) {
+          console.log('🔍 Fetching roadmap questions to find question key...');
+          // Fetch the roadmap questions to find the question key
+          try {
+            const response = await fetch(`${import.meta.env.VITE_API_URL}/roadmaps/${activeSession.roadmap_id}/questions`, {
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+              }
+            });
+            
+            if (response.ok) {
+              const questions = await response.json();
+              // Find the question by title (more reliable than numeric ID)
+              const question = questions.find(q => 
+                q.leetcode_title === activeSession.question_title || 
+                q.original_title === activeSession.question_title
+              );
+              
+              if (question) {
+                const questionKey = question.key || question._key;
+                console.log('✅ Found question key:', questionKey);
+                navigate(`/challenge/${activeSession.roadmap_id}/${questionKey}`);
+                return;
+              } else {
+                console.warn('⚠️ Question not found in roadmap, showing modal');
+              }
+            }
+          } catch (error) {
+            console.error('Error fetching roadmap questions:', error);
+          }
+        } else if (activeSession.question_id) {
+          // Daily challenge - use numeric ID
+          navigate('/practice', { 
+            state: { 
+              challengeType: 'daily',
+              specificProblemId: activeSession.question_id
+            } 
+          });
+          return;
+        }
+        
+        // Fallback: show modal if we couldn't navigate
+        if (nextLevelInfo) {
+          setShowRoadmapModal(true);
+        } else {
+          setShowChallengeModal(true);
+        }
+      } else {
+        console.log('ℹ️ No active session, showing challenge modal');
+        // No active session, show the appropriate modal
+        if (nextLevelInfo) {
+          setShowRoadmapModal(true);
+        } else {
+          setShowChallengeModal(true);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking for active session:', error);
+      // On error, show modal anyway
+      if (nextLevelInfo) {
+        setShowRoadmapModal(true);
+      } else {
+        setShowChallengeModal(true);
+      }
     }
   };
 

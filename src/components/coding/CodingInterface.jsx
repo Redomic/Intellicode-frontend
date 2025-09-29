@@ -6,11 +6,13 @@ import CodeEditor from './CodeEditor';
 import ProfileDropdown from '../ProfileDropdown';
 import AIAssistantOrb from '../ui/AIAssistantOrb';
 import FullscreenExitModal from './FullscreenExitModal';
+import PauseSessionModal from './PauseSessionModal';
 import SessionRecoveryModal from '../session/SessionRecoveryModal';
 import SessionNavbarCounter from '../session/SessionNavbarCounter';
 import { sampleQuestions } from '../../data/codingQuestions';
 import useSession from '../../hooks/useSession';
 import { SESSION_TYPES } from '../../services/sessionOrchestrator';
+import sessionAPI from '../../services/sessionAPI';
 
 /**
  * CodingInterface - LeetCode-like coding interface
@@ -39,6 +41,8 @@ const CodingInterface = ({
   const [language, setLanguage] = useState('python');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showExitModal, setShowExitModal] = useState(false);
+  const [showPauseModal, setShowPauseModal] = useState(false);
+  const [showSessionMenu, setShowSessionMenu] = useState(false);
   const [sessionStartTime] = useState(Date.now());
   const [userTriedToExit, setUserTriedToExit] = useState(false);
   const [isTabVisible, setIsTabVisible] = useState(!document.hidden);
@@ -68,7 +72,9 @@ const CodingInterface = ({
     sessionProgress,
     liveMetrics,
     isStarting: isStartingSession,
-    isResuming: isResumingSession
+    isResuming: isResumingSession,
+    isPausing,
+    isEnding
   } = useSession();
   
   // Refs for cleanup and timing
@@ -78,6 +84,7 @@ const CodingInterface = ({
   const lastAttemptRef = useRef(0);
   const sessionStartedRef = useRef(false);
   const fullscreenCheckTimeoutRef = useRef(null);
+  const hadSessionRef = useRef(false); // Track if we had a session for navigation on end
 
   // Convert roadmap question to sampleQuestion format for compatibility
   const convertRoadmapQuestion = (roadmapQ) => {
@@ -143,10 +150,23 @@ const CodingInterface = ({
     );
   }, [sessionConfig?.fullscreenActivated, currentSession?.config?.enableFullscreen, currentSession, isSessionActive]);
 
+  // Reset session ref when question changes or component mounts
+  useEffect(() => {
+    // If question changes or we don't have an active session, reset the ref
+    if (!currentSession || !isSessionActive) {
+      console.log('🔄 Resetting session ref - no active session in Redux');
+      sessionStartedRef.current = false;
+    }
+  }, [selectedQuestion?.id, currentSession, isSessionActive]);
+
   // Initialize session when component mounts or when session config changes
   useEffect(() => {
     const initializeSession = async () => {
       if (!selectedQuestion || sessionStartedRef.current) return;
+      
+      console.log('🚀 CodingInterface: Initializing session for question:', selectedQuestion.title);
+      console.log('🔍 Current session state:', currentSession ? currentSession.id : 'None');
+      console.log('🔍 Needs recovery:', needsRecovery);
       
       try {
         const sessionType = roadmapQuestion ? 
@@ -168,20 +188,27 @@ const CodingInterface = ({
           userAgreements: sessionConfig?.userAgreements || {},
         };
 
+        console.log('📞 Calling backend to start session...');
         const sessionId = await startSession(newSessionConfig);
         sessionStartedRef.current = true;
-        console.log('📊 Session Started - ID:', sessionId);
+        console.log('✅ Session Started - ID:', sessionId);
         console.log('📊 Session Config:', newSessionConfig);
       } catch (error) {
-        console.error('Failed to initialize coding session:', error);
+        console.error('❌ Failed to initialize coding session:', error);
       }
     };
 
-    // Only start session if we don't have one and don't need recovery
-    if (!currentSession && !needsRecovery) {
+    // ALWAYS start a fresh session - backend will handle ending any existing sessions
+    // Don't check currentSession locally - let backend be source of truth
+    if (!needsRecovery && !sessionStartedRef.current) {
+      console.log('🎯 Starting session initialization...');
       initializeSession();
+    } else if (needsRecovery) {
+      console.log('⏸️ Skipping session init - recovery needed');
+    } else if (sessionStartedRef.current) {
+      console.log('⏸️ Skipping session init - already started');
     }
-  }, [selectedQuestion, roadmapQuestion, challengeType, roadmapId, language, sessionConfig, currentSession, needsRecovery, startSession]);
+  }, [selectedQuestion, roadmapQuestion, challengeType, roadmapId, language, sessionConfig, needsRecovery, startSession]);
 
   // Handle session recovery on mount
   useEffect(() => {
@@ -191,6 +218,24 @@ const CodingInterface = ({
       console.log('Current Session ID:', currentSession?.id || 'No current session');
     }
   }, [needsRecovery, recoveryData, currentSession?.id]);
+
+  // Navigate to dashboard when session ends
+  useEffect(() => {
+    // Track if we have an active session
+    if (currentSession && isSessionActive) {
+      hadSessionRef.current = true;
+    }
+    
+    // If we had a session and now it's gone (and not in recovery), go to dashboard
+    if (hadSessionRef.current && !currentSession && !needsRecovery && !isSessionActive) {
+      console.log('🏠 Session ended - navigating to dashboard');
+      hadSessionRef.current = false; // Reset flag
+      
+      setTimeout(() => {
+        navigate('/dashboard');
+      }, 500); // Small delay for UX
+    }
+  }, [currentSession, isSessionActive, needsRecovery, navigate]);
 
   const handleQuestionChange = (questionId) => {
     setSelectedQuestionId(questionId);
@@ -629,24 +674,19 @@ const CodingInterface = ({
   }, []);
 
   // Handle keyboard shortcuts
+  // Close session menu when clicking outside
   useEffect(() => {
-    const handleKeyDown = (event) => {
-      // F11 key - toggle fullscreen
-      if (event.key === 'F11') {
-        event.preventDefault();
-        setUserTriedToExit(true);
-        toggleFullscreen();
+    const handleClickOutside = (event) => {
+      if (showSessionMenu && !event.target.closest('.relative')) {
+        setShowSessionMenu(false);
       }
-      
-      // Escape key - let the browser handle it naturally
-      // The fullscreen change handler will detect the exit and show modal if needed
     };
 
-    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('mousedown', handleClickOutside);
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [toggleFullscreen]);
+  }, [showSessionMenu]);
 
   // Session recovery handlers
   const handleRecoverSession = useCallback(async () => {
@@ -739,6 +779,144 @@ const CodingInterface = ({
     }
   }, [endSession, exitFullscreen, navigate, getCurrentFullscreenState, stopFullscreenEnforcement, roadmapId, sessionStartTime]);
 
+  // Pause session handlers
+  const handlePauseSession = useCallback(async () => {
+    try {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('⏸️ User clicked pause button');
+      }
+      
+      // First pause the local session
+      await pauseSession('user_pause');
+      
+      // Then sync with backend if we have a session
+      if (currentSession?.id) {
+        try {
+          await sessionAPI.pauseSession(currentSession.id, 'user_pause');
+          if (process.env.NODE_ENV === 'development') {
+            console.log('✅ Session paused in backend');
+          }
+        } catch (error) {
+          console.warn('Failed to pause session in backend:', error);
+          // Continue with local pause even if backend fails
+        }
+      }
+      
+      // Show pause modal
+      setShowPauseModal(true);
+      
+    } catch (error) {
+      console.error('Failed to pause session:', error);
+    }
+  }, [pauseSession, currentSession]);
+
+  const handleResumeSession = useCallback(async () => {
+    try {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('▶️ User clicked resume button');
+      }
+      
+      setShowPauseModal(false);
+      
+      // First resume the local session
+      await resumeSession();
+      
+      // Then sync with backend if we have a session
+      if (currentSession?.id) {
+        try {
+          await sessionAPI.resumeSession(currentSession.id);
+          if (process.env.NODE_ENV === 'development') {
+            console.log('✅ Session resumed in backend');
+          }
+        } catch (error) {
+          console.warn('Failed to resume session in backend:', error);
+          // Continue with local resume even if backend fails
+        }
+      }
+      
+    } catch (error) {
+      console.error('Failed to resume session:', error);
+    }
+  }, [resumeSession, currentSession]);
+
+  // Setup keyboard shortcuts (placed here after handlePauseSession and handleResumeSession are defined)
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      // F11 key - toggle fullscreen
+      if (event.key === 'F11') {
+        event.preventDefault();
+        setUserTriedToExit(true);
+        toggleFullscreen();
+        return;
+      }
+      
+      // Ctrl/Cmd + P for pause/resume
+      if ((event.ctrlKey || event.metaKey) && event.key === 'p') {
+        event.preventDefault();
+        if (isSessionActive) {
+          handlePauseSession();
+        } else if (isSessionPaused) {
+          handleResumeSession();
+        }
+      }
+      
+      // Escape key - let the browser handle it naturally
+      // The fullscreen change handler will detect the exit and show modal if needed
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [toggleFullscreen, isSessionActive, isSessionPaused, handlePauseSession, handleResumeSession, setUserTriedToExit]);
+
+  const handleEndSessionFromPause = useCallback(async (reason = 'user_request') => {
+    try {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🛑 User chose to end session from pause modal');
+      }
+      
+      setShowPauseModal(false);
+      
+      // End the local session
+      try {
+        await endSession(reason, {
+          reason: 'User chose to end session from pause modal',
+          timeElapsed: Date.now() - sessionStartTime
+        });
+        sessionStartedRef.current = false;
+        
+        // Also end in backend if we have a session
+        if (currentSession?.id) {
+          try {
+            await sessionAPI.endSession(currentSession.id, reason);
+            if (process.env.NODE_ENV === 'development') {
+              console.log('✅ Session ended in backend');
+            }
+          } catch (error) {
+            console.warn('Failed to end session in backend:', error);
+          }
+        }
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.log('✅ Session ended successfully');
+        }
+      } catch (error) {
+        console.error('Failed to end session properly:', error);
+      }
+      
+      // Navigate back to appropriate page
+      if (roadmapId) {
+        navigate(`/roadmap/${roadmapId}`);
+      } else {
+        navigate('/dashboard');
+      }
+      
+    } catch (error) {
+      console.error('Failed to end session from pause:', error);
+    }
+  }, [endSession, currentSession, navigate, roadmapId, sessionStartTime]);
+
   // Format elapsed time - memoized to prevent unnecessary recalculations
   const getFormattedElapsedTime = useCallback(() => {
     const elapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
@@ -777,13 +955,65 @@ const CodingInterface = ({
           
             {/* Session Counter */}
             {currentSession && (
-              <SessionNavbarCounter
-                session={currentSession}
-                isActive={isSessionActive}
-                isPaused={isSessionPaused}
-                onPause={() => pauseSession('user_pause')}
-                onResume={resumeSession}
-              />
+              <div className="flex items-center space-x-3">
+                <SessionNavbarCounter
+                  session={currentSession}
+                  isActive={isSessionActive}
+                  isPaused={isSessionPaused}
+                />
+                
+                {/* Session Controls Menu */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowSessionMenu(!showSessionMenu)}
+                    className="p-2 text-zinc-400 hover:text-zinc-200 rounded-lg hover:bg-zinc-700/50 transition-colors"
+                    title="Session Controls"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                    </svg>
+                  </button>
+                  
+                  {/* Dropdown Menu */}
+                  {showSessionMenu && (
+                    <div className="absolute top-full left-0 mt-2 w-48 bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg z-50">
+                      <div className="py-1">
+                        {isSessionActive && (
+                          <button
+                            onClick={() => {
+                              handlePauseSession();
+                              setShowSessionMenu(false);
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-zinc-200 hover:bg-zinc-700 flex items-center space-x-2"
+                          >
+                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+                            </svg>
+                            <span>Pause Session</span>
+                            <span className="text-xs text-zinc-500 ml-auto">Ctrl+P</span>
+                          </button>
+                        )}
+                        
+                        {isSessionPaused && (
+                          <button
+                            onClick={() => {
+                              handleResumeSession();
+                              setShowSessionMenu(false);
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-zinc-200 hover:bg-zinc-700 flex items-center space-x-2"
+                          >
+                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M8 5v14l11-7z"/>
+                            </svg>
+                            <span>Resume Session</span>
+                            <span className="text-xs text-zinc-500 ml-auto">Ctrl+P</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
 
             {/* Development test buttons */}
@@ -910,6 +1140,16 @@ const CodingInterface = ({
         onContinue={handleContinueSession}
         onEndSession={handleEndSession}
         sessionInfo={sessionInfo}
+      />
+
+      {/* Pause Session Modal */}
+      <PauseSessionModal
+        isVisible={showPauseModal}
+        onResume={handleResumeSession}
+        onEndSession={handleEndSessionFromPause}
+        sessionInfo={sessionInfo}
+        isPausing={isPausing}
+        isResuming={isResumingSession}
       />
 
       {/* Session Recovery Modal */}

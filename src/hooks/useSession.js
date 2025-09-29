@@ -90,7 +90,8 @@ const useSession = () => {
   // Setup orchestrator sync on mount
   useEffect(() => {
     setupSessionOrchestratorSync(dispatch);
-    dispatch(syncWithOrchestrator());
+    // Don't sync immediately - wait for orchestrator's INITIALIZED event
+    // This ensures we sync AFTER async backend check completes
     
     return () => {
       cleanupSessionOrchestratorSync();
