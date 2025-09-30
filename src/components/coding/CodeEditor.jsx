@@ -1,12 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Editor from '@monaco-editor/react';
-import { useSubmitSolution } from '../../services/api';
+import { useSubmitSolution, useRunCode } from '../../services/api';
 import useBehaviorTracking from '../../hooks/useBehaviorTracking';
 import useSession from '../../hooks/useSession';
 import BehaviorFeedback from './BehaviorFeedback';
 import BehaviorPrivacyControls from './BehaviorPrivacyControls';
+import SubmissionResult from './SubmissionResult';
+import SubmissionHistory from './SubmissionHistory';
+import SubmissionSuccessModal from './SubmissionSuccessModal';
 import { LoadingButton } from '../ui/InlineLoading';
 import LoadingSpinner from '../ui/LoadingSpinner';
+import { useNavigate } from 'react-router-dom';
 
 /**
  * CodeEditor - Right panel with code editor and execution controls
@@ -14,10 +18,12 @@ import LoadingSpinner from '../ui/LoadingSpinner';
 const CodeEditor = ({ 
   question, 
   language, 
-  onLanguageChange
+  onLanguageChange,
+  location
 }) => {
   const [code, setCode] = useState('');
   const [output, setOutput] = useState('');
+  const [submissionResult, setSubmissionResult] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
   const [activeTab, setActiveTab] = useState('code');
   const [editorTheme, setEditorTheme] = useState('intellit-dark');
@@ -25,18 +31,25 @@ const CodeEditor = ({
   const [showBehaviorFeedback, setShowBehaviorFeedback] = useState(process.env.NODE_ENV === 'development');
   const [showPrivacyControls, setShowPrivacyControls] = useState(false);
   const [codeInitialized, setCodeInitialized] = useState(false);
+  const [customTestCases, setCustomTestCases] = useState([]);
+  const [runningTestIndex, setRunningTestIndex] = useState(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successModalData, setSuccessModalData] = useState(null);
   const editorRef = useRef(null);
   const monacoRef = useRef(null);
+  const navigate = useNavigate();
   
   // API hooks
   const submitSolutionHook = useSubmitSolution();
+  const runCodeHook = useRunCode();
   
   // Session management
   const {
     currentSession,
     needsRecovery,
     recoveryData,
-    trackCodeChange
+    trackCodeChange,
+    endSession
   } = useSession();
   
   // Behavior tracking
@@ -53,10 +66,21 @@ const CodeEditor = ({
   });
   
   // Combined loading state
-  const isApiLoading = submitSolutionHook.loading;
+  const isApiLoading = submitSolutionHook.loading || runCodeHook.loading;
 
-  // Language templates
+  // Language templates - Use templates from database or fallback
   const getLanguageTemplate = (lang, question) => {
+    // First try to use code_templates from database
+    if (question?.code_templates && question.code_templates[lang]) {
+      return question.code_templates[lang];
+    }
+    
+    // Fallback to default_code if available
+    if (question?.default_code) {
+      return question.default_code;
+    }
+    
+    // Last resort: generic templates
     const templates = {
       python: question?.pythonTemplate || `def solution(${question?.functionSignature?.python || 'nums'}):\n    # Write your code here\n    pass\n\n# Test your solution\nif __name__ == "__main__":\n    # Add test cases here\n    pass`,
       java: question?.javaTemplate || `class Solution {\n    public ${question?.functionSignature?.java || 'int[] solution(int[] nums)'} {\n        // Write your code here\n        \n    }\n\n    public static void main(String[] args) {\n        Solution sol = new Solution();\n        // Add test cases here\n    }\n}`
@@ -424,14 +448,35 @@ const CodeEditor = ({
     }
   };
 
-  // Initialize code from session recovery or template
+  // Initialize code from session snapshots or template
   useEffect(() => {
     const initializeCode = async () => {
       let codeToSet = '';
       let shouldRestoreFromSession = false;
 
-      // Check if we need to recover code from session
-      if (needsRecovery && recoveryData?.lastCode?.code && 
+      // Priority 1: Check for code snapshots in current session
+      if (currentSession?.code_snapshots && currentSession.code_snapshots.length > 0 && !codeInitialized) {
+        // Get the most recent snapshot
+        const snapshots = [...currentSession.code_snapshots].sort((a, b) => 
+          new Date(b.timestamp) - new Date(a.timestamp)
+        );
+        const latestSnapshot = snapshots[0];
+        
+        if (latestSnapshot?.code) {
+          codeToSet = latestSnapshot.code;
+          shouldRestoreFromSession = true;
+          
+          console.log('📸 Restoring code from latest snapshot:', {
+            sessionId: currentSession.sessionId,
+            codeLength: codeToSet.length,
+            timestamp: latestSnapshot.timestamp,
+            language: latestSnapshot.language || language
+          });
+        }
+      }
+      
+      // Priority 2: Check recovery data
+      if (!codeToSet && needsRecovery && recoveryData?.lastCode?.code && 
           recoveryData.sessionId === currentSession?.id &&
           !codeInitialized) {
         
@@ -443,9 +488,10 @@ const CodeEditor = ({
           codeLength: codeToSet.length,
           language: recoveryData.lastCode.language || language
         });
+      }
         
-      } else if (currentSession?.currentCode && !codeInitialized) {
-        // Try to restore from current session if available
+      // Priority 3: Check currentCode field
+      if (!codeToSet && currentSession?.currentCode && !codeInitialized) {
         codeToSet = currentSession.currentCode;
         shouldRestoreFromSession = true;
         
@@ -453,9 +499,10 @@ const CodeEditor = ({
           sessionId: currentSession.id,
           codeLength: codeToSet.length
         });
+      }
         
-      } else {
-        // Use default template
+      // Priority 4: Use default template
+      if (!codeToSet) {
         codeToSet = getLanguageTemplate(language, question);
         console.log('📝 Using default template for question:', question?.id);
       }
@@ -466,7 +513,6 @@ const CodeEditor = ({
       
       // Show restoration message if code was restored
       if (shouldRestoreFromSession && codeToSet.trim() !== getLanguageTemplate(language, question).trim()) {
-        // You could show a toast notification here
         console.log('✅ Code successfully restored from previous session');
       }
       
@@ -489,7 +535,7 @@ const CodeEditor = ({
     };
 
     initializeCode();
-  }, [language, question?.id, needsRecovery, recoveryData, currentSession?.id]); // Added session dependencies
+  }, [language, question?.id, needsRecovery, recoveryData, currentSession?.id, currentSession?.code_snapshots]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -505,86 +551,188 @@ const CodeEditor = ({
     };
   }, [showSettingsDropdown]);
 
-  // Track code changes for session persistence
-  useEffect(() => {
-    if (codeInitialized && currentSession && code) {
-      // Throttle code change tracking to avoid excessive API calls
-      const timeoutId = setTimeout(() => {
-        trackCodeChange(code, language);
-      }, 1000); // Wait 1 second after user stops typing
-
-      return () => clearTimeout(timeoutId);
-    }
-  }, [code, language, currentSession, codeInitialized, trackCodeChange]);
+  // Code snapshots are now only saved on Run or Submit actions (removed auto-save)
+  // This reduces unnecessary database operations and API calls
 
   const handleRunCode = async () => {
-    setIsRunning(true);
-    setOutput('Running code...');
-    
-    // Simulate code execution (replace with actual execution later)
-    setTimeout(() => {
-      const success = Math.random() > 0.3; // 70% success rate for simulation
-      const result = {
-        success,
-        executionTime: Math.random() * 1000 + 500,
-        codeLength: code.length
-      };
-      
-      if (success) {
-        setOutput('Output:\nCode executed successfully!\n\nNote: This is a mock execution. Integrate with a code execution service for real results.');
-      } else {
-        const error = 'Runtime Error: Index out of bounds on line 5';
-        setOutput(`Output:\n❌ ${error}\n\nNote: This is a simulated error.`);
-      }
-      
-      setIsRunning(false);
-    }, 1500);
-  };
+    if (!question?.sample_test_cases || question.sample_test_cases.length === 0) {
+      setSubmissionResult({
+        success: false,
+        status: 'Error',
+        passed_count: 0,
+        total_count: 0,
+        error_message: 'No test cases available for this question.'
+      });
+      setActiveTab('result');
+      return;
+    }
 
-  const handleSubmit = async () => {
-    if (!question?.id || !code.trim()) {
-      setOutput('Error: Please write some code before submitting.');
+    if (!code.trim()) {
+      setSubmissionResult({
+        success: false,
+        status: 'Error',
+        passed_count: 0,
+        total_count: 0,
+        error_message: 'Please write some code before running.'
+      });
+      setActiveTab('result');
       return;
     }
 
     setIsRunning(true);
-    setOutput('Submitting solution...');
+    setSubmissionResult(null);
     setActiveTab('result');
     
     try {
-      const submissionData = {
-        problemId: question.id,
+      // Use only sample test cases for running (not full submission)
+      const testCases = question.sample_test_cases.map(tc => ({
+        input: tc.input,
+        expected_output: tc.expected_output || tc.output
+      }));
+
+      const runData = {
         code: code,
         language: language,
-        testCases: question.examples || []
+        test_cases: testCases,
+        question_id: question.id
+      };
+
+      const result = await runCodeHook.execute(runData);
+      
+      // Set the result for the new component
+      setSubmissionResult(result);
+      
+      // Save code snapshot on Run action
+      if (currentSession && trackCodeChange) {
+        try {
+          await trackCodeChange(code, language);
+        } catch (error) {
+          console.warn('Failed to save code snapshot:', error);
+        }
+      }
+      
+      // Track code execution event
+      if (currentSession) {
+        try {
+          behaviorTracking.recordBehaviorEvent?.('CODE_EXECUTION', { 
+            action: 'run',
+            status: result.status,
+            passed: result.passed_count,
+            total: result.total_count
+          });
+        } catch (error) {
+          console.warn('Failed to track code execution:', error);
+        }
+      }
+      
+    } catch (error) {
+      console.error('Code execution failed:', error);
+      setSubmissionResult({
+        success: false,
+        status: 'Execution Failed',
+        passed_count: 0,
+        total_count: question.sample_test_cases.length,
+        error_message: error.response?.data?.detail || error.message || 'Unknown error occurred. Please check your code and try again.'
+      });
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!question?.id || !code.trim()) {
+      setSubmissionResult({
+        success: false,
+        status: 'Error',
+        passed_count: 0,
+        total_count: 0,
+        error_message: 'Please write some code before submitting.'
+      });
+      setActiveTab('result');
+      return;
+    }
+
+    if (!question?.sample_test_cases || question.sample_test_cases.length === 0) {
+      setSubmissionResult({
+        success: false,
+        status: 'Error',
+        passed_count: 0,
+        total_count: 0,
+        error_message: 'No test cases available for this question.'
+      });
+      setActiveTab('result');
+      return;
+    }
+
+    setIsRunning(true);
+    setSubmissionResult(null);
+    setActiveTab('result');
+    
+    try {
+      // Prepare test cases from question data
+      const testCases = question.sample_test_cases.map(tc => ({
+        input: tc.input,
+        expected_output: tc.expected_output || tc.output
+      }));
+
+      const submissionData = {
+        code: code,
+        language: language,
+        question_key: String(question.id),
+        question_title: question.title || 'Coding Challenge',
+        test_cases: testCases,
+        session_id: currentSession?.sessionId || currentSession?.id,
+        roadmap_id: question.course || null,
+        difficulty: question.difficulty || question.leetcode_difficulty || 'Medium',
+        function_name: null  // Auto-detect from code
       };
 
       const result = await submitSolutionHook.execute(submissionData);
       
+      // Set the result for the new component
+      setSubmissionResult(result);
+      
+      // Save code snapshot on Submit action
+      if (currentSession && trackCodeChange) {
+        try {
+          await trackCodeChange(code, language);
+        } catch (error) {
+          console.warn('Failed to save code snapshot:', error);
+        }
+      }
+      
+      // Track submission event
+      if (currentSession) {
+        try {
+          behaviorTracking.recordBehaviorEvent?.('CODE_SUBMISSION', { 
+            action: 'submit',
+            status: result.success ? 'accepted' : 'failed'
+          });
+        } catch (error) {
+          console.warn('Failed to track submission:', error);
+        }
+      }
+
+      // Show success modal if submission is accepted
       if (result.success) {
-        setOutput(
-          `Submission Result:\n✅ All test cases passed!\n\n` +
-          `Runtime: ${result.runtime || '42ms'} (beats ${result.runtimePercentile || '95.23'}% of submissions)\n` +
-          `Memory: ${result.memory || '14.2MB'} (beats ${result.memoryPercentile || '88.47'}% of submissions)\n\n` +
-          `Score: ${result.score || 100}/100`
-        );
-      } else {
-        setOutput(
-          `Submission Result:\n❌ ${result.failed || 0} test case(s) failed\n\n` +
-          `Error: ${result.error || 'Unknown error occurred'}\n\n` +
-          `Test case ${result.failedTestCase || 1}:\n` +
-          `Input: ${result.failedInput || 'N/A'}\n` +
-          `Expected: ${result.expected || 'N/A'}\n` +
-          `Got: ${result.actual || 'N/A'}`
-        );
+        setSuccessModalData({
+          questionTitle: question.title,
+          runtime: result.runtime_ms,
+          runtimePercentile: result.runtime_percentile,
+          memoryKb: result.memory_kb,
+          memoryPercentile: result.memory_percentile
+        });
+        setShowSuccessModal(true);
       }
     } catch (error) {
       console.error('Submission failed:', error);
-      setOutput(
-        `Submission Failed:\n❌ Network error or server is unavailable\n\n` +
-        `Please check your connection and try again.\n` +
-        `Error: ${error.message || 'Unknown error'}`
-      );
+      setSubmissionResult({
+        success: false,
+        status: 'Submission Failed',
+        passed_count: 0,
+        total_count: question.sample_test_cases.length,
+        error_message: error.response?.data?.detail || error.message || 'Network error occurred. Please check your connection and try again.'
+      });
     } finally {
       setIsRunning(false);
     }
@@ -593,13 +741,106 @@ const CodeEditor = ({
   const handleReset = () => {
     setCode(getLanguageTemplate(language, question));
     setOutput('');
+    setSubmissionResult(null);
+  };
+
+  const handleContinueCoding = () => {
+    setShowSuccessModal(false);
+    setSuccessModalData(null);
+    // User can continue coding - modal just closes
+  };
+
+  const handleEndSessionFromSuccess = async () => {
+    setShowSuccessModal(false);
+    setSuccessModalData(null);
+    
+    // End the coding session
+    try {
+      await endSession('problem_completed', {
+        reason: 'User completed problem and chose to end session',
+        questionId: question?.id,
+        questionTitle: question?.title
+      });
+      console.log('Session ended successfully after problem completion');
+    } catch (error) {
+      console.error('Failed to end session:', error);
+    }
+    
+    // Navigate back to appropriate page
+    const roadmapId = question?.course || location.pathname.match(/\/challenge\/([^\/]+)\//)?.[1];
+    if (roadmapId) {
+      navigate(`/roadmap/${roadmapId}`);
+    } else {
+      navigate('/dashboard');
+    }
+  };
+
+  const handleRunSingleTest = async (testCase, index) => {
+    if (!code.trim()) {
+      setSubmissionResult({
+        success: false,
+        status: 'Error',
+        passed_count: 0,
+        total_count: 1,
+        error_message: 'Please write some code before running.'
+      });
+      setActiveTab('result');
+      return;
+    }
+
+    setRunningTestIndex(index);
+    setSubmissionResult(null);
+    setActiveTab('result');
+    
+    try {
+      const runData = {
+        code: code,
+        language: language,
+        test_cases: [{
+          input: testCase.input,
+          expected_output: testCase.expected_output || testCase.output
+        }],
+        question_id: question.id
+      };
+
+      const result = await runCodeHook.execute(runData);
+      setSubmissionResult(result);
+    } catch (error) {
+      console.error('Test execution failed:', error);
+      setSubmissionResult({
+        success: false,
+        status: 'Test Execution Failed',
+        passed_count: 0,
+        total_count: 1,
+        error_message: error.response?.data?.detail || error.message || 'Unknown error occurred'
+      });
+    } finally {
+      setRunningTestIndex(null);
+    }
+  };
+
+  const handleAddCustomTestCase = () => {
+    setCustomTestCases([
+      ...customTestCases,
+      { input: '', expected_output: '', custom: true }
+    ]);
+  };
+
+  const handleUpdateCustomTestCase = (index, field, value) => {
+    const updated = [...customTestCases];
+    updated[index][field] = value;
+    setCustomTestCases(updated);
+  };
+
+  const handleRemoveCustomTestCase = (index) => {
+    setCustomTestCases(customTestCases.filter((_, i) => i !== index));
   };
 
   const tabs = [
     { id: 'code', label: 'Code' },
     { id: 'testcases', label: 'Test Cases' },
-    { id: 'problems', label: 'Problems' },
-    { id: 'result', label: 'Result' }
+    { id: 'result', label: 'Result' },
+    { id: 'submissions', label: 'Submissions' }
   ];
 
   // Toggle minimap
@@ -881,36 +1122,110 @@ const CodeEditor = ({
           <div className="flex-1 p-4 overflow-y-auto">
             <h4 className="text-zinc-100 font-medium mb-4">Test Cases</h4>
             <div className="space-y-4">
-              {question?.examples?.map((example, index) => (
-                <div key={index} className="bg-zinc-800 rounded-lg p-4 border border-zinc-700">
+              {/* Sample Test Cases */}
+              {(question?.sample_test_cases || question?.examples || []).map((example, index) => (
+                <div key={`sample-${index}`} className="bg-zinc-800 rounded-lg p-4 border border-zinc-700">
                   <div className="flex items-center justify-between mb-3">
-                    <h5 className="text-zinc-100 font-medium">Test Case {index + 1}</h5>
-                    <button className="text-xs text-blue-400 hover:text-blue-300">
+                    <h5 className="text-zinc-100 font-medium">
+                      Test Case {index + 1}
+                      {example.example_number && <span className="text-xs text-zinc-400 ml-2">(Example {example.example_number})</span>}
+                    </h5>
+                    <LoadingButton
+                      onClick={() => handleRunSingleTest(example, index)}
+                      isLoading={runningTestIndex === index}
+                      loadingText="Running..."
+                      variant="ghost"
+                      size="xs"
+                      className="text-xs text-blue-400 hover:text-blue-300 px-3 py-1"
+                    >
                       Run Test
-                    </button>
+                    </LoadingButton>
                   </div>
                   
                   <div className="space-y-2 text-sm">
                     <div>
                       <span className="text-zinc-400">Input:</span>
-                      <pre className="text-zinc-200 bg-zinc-900 p-2 rounded mt-1 overflow-x-auto">
+                      <pre className="text-zinc-200 bg-zinc-900 p-2 rounded mt-1 overflow-x-auto font-mono text-xs">
                         {example.input}
                       </pre>
                     </div>
                     
                     <div>
                       <span className="text-zinc-400">Expected Output:</span>
-                      <pre className="text-zinc-200 bg-zinc-900 p-2 rounded mt-1 overflow-x-auto">
-                        {example.output}
+                      <pre className="text-zinc-200 bg-zinc-900 p-2 rounded mt-1 overflow-x-auto font-mono text-xs">
+                        {example.expected_output || example.output}
                       </pre>
+                    </div>
+                    
+                    {example.explanation && (
+                      <div>
+                        <span className="text-zinc-400">Explanation:</span>
+                        <p className="text-zinc-300 mt-1 text-xs">{example.explanation}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              
+              {/* Custom Test Cases */}
+              {customTestCases.map((testCase, index) => (
+                <div key={`custom-${index}`} className="bg-zinc-800/50 rounded-lg p-4 border border-blue-700/50">
+                  <div className="flex items-center justify-between mb-3">
+                    <h5 className="text-zinc-100 font-medium">
+                      Custom Test Case {index + 1}
+                    </h5>
+                    <div className="flex items-center space-x-2">
+                      <LoadingButton
+                        onClick={() => handleRunSingleTest(testCase, (question?.sample_test_cases?.length || 0) + index)}
+                        isLoading={runningTestIndex === ((question?.sample_test_cases?.length || 0) + index)}
+                        loadingText="Running..."
+                        variant="ghost"
+                        size="xs"
+                        className="text-xs text-blue-400 hover:text-blue-300 px-3 py-1"
+                      >
+                        Run Test
+                      </LoadingButton>
+                      <button
+                        onClick={() => handleRemoveCustomTestCase(index)}
+                        className="text-xs text-red-400 hover:text-red-300 px-2 py-1"
+                      >
+                        Remove
+                </button>
+              </div>
+            </div>
+                  
+                  <div className="space-y-2 text-sm">
+                  <div>
+                      <label className="text-zinc-400 block mb-1">Input:</label>
+                      <textarea
+                        value={testCase.input}
+                        onChange={(e) => handleUpdateCustomTestCase(index, 'input', e.target.value)}
+                        placeholder='e.g., x = 123 or nums = [1,2,3]'
+                        className="w-full bg-zinc-900 text-zinc-200 p-2 rounded border border-zinc-600 focus:border-blue-500 focus:outline-none font-mono text-xs"
+                        rows={2}
+                      />
+              </div>
+              
+                  <div>
+                      <label className="text-zinc-400 block mb-1">Expected Output:</label>
+                      <textarea
+                        value={testCase.expected_output}
+                        onChange={(e) => handleUpdateCustomTestCase(index, 'expected_output', e.target.value)}
+                        placeholder='e.g., 321 or [3,2,1]'
+                        className="w-full bg-zinc-900 text-zinc-200 p-2 rounded border border-zinc-600 focus:border-blue-500 focus:outline-none font-mono text-xs"
+                        rows={2}
+                      />
                     </div>
                   </div>
                 </div>
               ))}
               
-              {/* Add Custom Test Case */}
-              <div className="border-2 border-dashed border-zinc-600 rounded-lg p-4 text-center">
-                <button className="text-zinc-400 hover:text-zinc-200 transition-colors duration-200">
+              {/* Add Custom Test Case Button */}
+              <div className="border-2 border-dashed border-zinc-600 rounded-lg p-4 text-center hover:border-zinc-500 transition-colors">
+                <button
+                  onClick={handleAddCustomTestCase}
+                  className="text-zinc-400 hover:text-zinc-200 transition-colors duration-200 w-full"
+                >
                   <svg className="w-6 h-6 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                   </svg>
@@ -921,105 +1236,19 @@ const CodeEditor = ({
           </div>
         )}
 
-        {activeTab === 'problems' && (
-          <div className="flex-1 p-4 overflow-y-auto">
-            <h4 className="text-zinc-100 font-medium mb-4">Problems</h4>
-            <div className="space-y-3">
-              {/* Mock syntax/linting problems */}
-              <div className="bg-red-900/20 border border-red-700/50 rounded-lg p-3">
-                <div className="flex items-start space-x-3">
-                  <div className="w-4 h-4 bg-red-500 rounded-full flex-shrink-0 mt-0.5"></div>
-                  <div>
-                    <div className="flex items-center space-x-2 mb-1">
-                      <span className="text-red-400 text-sm font-medium">Syntax Error</span>
-                      <span className="text-zinc-500 text-xs">Line 12</span>
-                    </div>
-                    <p className="text-zinc-300 text-sm">Missing colon at end of function definition</p>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-3">
-                <div className="flex items-start space-x-3">
-                  <div className="w-4 h-4 bg-yellow-500 rounded-full flex-shrink-0 mt-0.5"></div>
-                  <div>
-                    <div className="flex items-center space-x-2 mb-1">
-                      <span className="text-yellow-400 text-sm font-medium">Warning</span>
-                      <span className="text-zinc-500 text-xs">Line 8</span>
-                    </div>
-                    <p className="text-zinc-300 text-sm">Unused variable 'temp'</p>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-3">
-                <div className="flex items-start space-x-3">
-                  <div className="w-4 h-4 bg-blue-500 rounded-full flex-shrink-0 mt-0.5"></div>
-                  <div>
-                    <div className="flex items-center space-x-2 mb-1">
-                      <span className="text-blue-400 text-sm font-medium">Info</span>
-                      <span className="text-zinc-500 text-xs">General</span>
-                    </div>
-                    <p className="text-zinc-300 text-sm">Consider using list comprehension for better performance</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Keyboard Shortcuts */}
-              <div className="mt-8 pt-4 border-t border-zinc-700">
-                <h5 className="text-zinc-100 font-medium mb-3">Keyboard Shortcuts</h5>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between items-center">
-                    <span className="text-zinc-300">Run Code</span>
-                    <kbd className="px-2 py-1 bg-zinc-700 text-zinc-300 rounded text-xs">Ctrl+Enter</kbd>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-zinc-300">Submit</span>
-                    <kbd className="px-2 py-1 bg-zinc-700 text-zinc-300 rounded text-xs">Ctrl+S</kbd>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-zinc-300">Format Code</span>
-                    <kbd className="px-2 py-1 bg-zinc-700 text-zinc-300 rounded text-xs">Alt+Shift+F</kbd>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-zinc-300">Auto Complete</span>
-                    <kbd className="px-2 py-1 bg-zinc-700 text-zinc-300 rounded text-xs">Ctrl+Space</kbd>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-zinc-300">Toggle Comment</span>
-                    <kbd className="px-2 py-1 bg-zinc-700 text-zinc-300 rounded text-xs">Ctrl+/</kbd>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-zinc-300">Find</span>
-                    <kbd className="px-2 py-1 bg-zinc-700 text-zinc-300 rounded text-xs">Ctrl+F</kbd>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-zinc-300">Find & Replace</span>
-                    <kbd className="px-2 py-1 bg-zinc-700 text-zinc-300 rounded text-xs">Ctrl+H</kbd>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {activeTab === 'result' && (
-          <div className="flex-1 p-4 overflow-y-auto">
-            <h4 className="text-zinc-100 font-medium mb-4">Submission Results</h4>
-            {output ? (
-              <div className="bg-zinc-800 rounded-lg p-4 border border-zinc-700">
-                <pre className="text-zinc-300 text-sm whitespace-pre-wrap">
-                  {output}
-                </pre>
-              </div>
-            ) : (
-              <div className="text-center text-zinc-400 py-8">
-                <svg className="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <p>No results yet. Run or submit your code to see results here.</p>
+          <div className="flex-1 overflow-hidden">
+            <SubmissionResult 
+              result={submissionResult} 
+              isRunning={isRunning || runningTestIndex !== null}
+            />
               </div>
             )}
+
+        {activeTab === 'submissions' && (
+          <div className="flex-1 overflow-hidden">
+            <SubmissionHistory questionKey={question?.id} />
           </div>
         )}
       </div>
@@ -1044,6 +1273,18 @@ const CodeEditor = ({
           behaviorTracker={behaviorTracking.behaviorTracker}
         />
       )}
+
+      {/* Submission Success Modal */}
+      <SubmissionSuccessModal
+        isVisible={showSuccessModal}
+        onContinue={handleContinueCoding}
+        onEndSession={handleEndSessionFromSuccess}
+        questionTitle={successModalData?.questionTitle}
+        runtime={successModalData?.runtime}
+        runtimePercentile={successModalData?.runtimePercentile}
+        memoryKb={successModalData?.memoryKb}
+        memoryPercentile={successModalData?.memoryPercentile}
+      />
     </div>
   );
 };

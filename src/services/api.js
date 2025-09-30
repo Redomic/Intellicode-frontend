@@ -26,7 +26,30 @@ export const useGetProblem = (id) => useAxios(`/problems/${id}`, {
   immediate: !!id,
   deps: [id]
 });
-export const useSubmitSolution = () => useAxios('/problems/submit', { method: 'POST', immediate: false });
+export const useSubmitSolution = () => useAxios('/submissions/submit', { method: 'POST', immediate: false });
+export const useRunCode = () => useAxios('/submissions/run', { method: 'POST', immediate: false });
+export const useGetSubmissionHistory = () => {
+  const hook = useAxios('/submissions/history', { method: 'GET', immediate: false });
+  
+  return {
+    ...hook,
+    execute: async (params = {}) => {
+      // Build query string from params
+      const queryParams = new URLSearchParams();
+      if (params.question_key) queryParams.append('question_key', params.question_key);
+      if (params.limit) queryParams.append('limit', params.limit);
+      if (params.offset) queryParams.append('offset', params.offset);
+      
+      const url = `/submissions/history?${queryParams.toString()}`;
+      return hook.execute({ url });
+    }
+  };
+};
+export const useGetSubmission = (id) => useAxios(`/submissions/${id}`, { 
+  method: 'GET',
+  immediate: !!id,
+  deps: [id]
+});
 
 // Progress API hooks
 export const useGetProgress = () => useAxios('/progress', { method: 'GET' });
@@ -88,6 +111,9 @@ export const problemsAPI = {
   useGetProblems,
   useGetProblem,
   useSubmitSolution,
+  useRunCode,
+  useGetSubmissionHistory,
+  useGetSubmission,
 };
 
 export const progressAPI = {

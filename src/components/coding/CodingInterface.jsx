@@ -1060,6 +1060,7 @@ const CodingInterface = ({
             question={selectedQuestion}
             language={language}
             onLanguageChange={handleLanguageChange}
+            location={location}
           />
         </div>
       </div>
