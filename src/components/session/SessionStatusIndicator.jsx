@@ -9,6 +9,7 @@ import {
   EyeIcon,
   EyeSlashIcon
 } from '@heroicons/react/24/outline';
+import { calculateElapsedSeconds } from '../../utils/dateUtils';
 
 const SessionStatusIndicator = ({ 
   session,
@@ -21,24 +22,29 @@ const SessionStatusIndicator = ({
   className = ''
 }) => {
   const [isVisible, setIsVisible] = useState(true);
-  const [currentTime, setCurrentTime] = useState(Date.now());
+  const [elapsed, setElapsed] = useState(0);
 
-  // Update time every second for live duration
+  // Calculate elapsed time every second using UTC-aligned utilities
   useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentTime(Date.now());
-    }, 1000);
+    if (!session?.startTime && !session?.start_time) return;
 
+    const calculateElapsed = () => {
+      const startTimeStr = session.startTime || session.start_time;
+      // Use UTC-aligned calculation from dateUtils
+      const elapsedSeconds = calculateElapsedSeconds(startTimeStr);
+      setElapsed(elapsedSeconds);
+    };
+
+    calculateElapsed();
+    const interval = setInterval(calculateElapsed, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [session?.startTime, session?.start_time]);
 
   if (!session) return null;
 
   const getDuration = () => {
-    const startTime = new Date(session.startTime).getTime();
-    const elapsed = currentTime - startTime;
-    const minutes = Math.floor(elapsed / (1000 * 60));
-    const seconds = Math.floor((elapsed % (1000 * 60)) / 1000);
+    const minutes = Math.floor(elapsed / 60);
+    const seconds = elapsed % 60;
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
@@ -265,3 +271,4 @@ const SessionStatusIndicator = ({
 };
 
 export default SessionStatusIndicator;
+

@@ -1,17 +1,17 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useDispatch } from 'react-redux';
 import screenfull from 'screenfull';
 import QuestionPanel from './QuestionPanel';
 import CodeEditor from './CodeEditor';
 import ProfileDropdown from '../ProfileDropdown';
 import AIAssistantOrb from '../ui/AIAssistantOrb';
 import FullscreenExitModal from './FullscreenExitModal';
-import PauseSessionModal from './PauseSessionModal';
-import SessionRecoveryModal from '../session/SessionRecoveryModal';
 import SessionNavbarCounter from '../session/SessionNavbarCounter';
+import SessionRecoveryModal from '../session/SessionRecoveryModal';
 import { sampleQuestions } from '../../data/codingQuestions';
 import useSession from '../../hooks/useSession';
-import { SESSION_TYPES } from '../../services/sessionOrchestrator';
+import { SESSION_TYPES } from '../../constants/sessionConstants';
 import sessionAPI from '../../services/sessionAPI';
 
 /**
@@ -25,6 +25,7 @@ const CodingInterface = ({
 }) => {
   const location = useLocation();
   const navigate = useNavigate();
+  const dispatch = useDispatch();
   const sessionConfig = location.state?.sessionConfig;
   const challengeType = location.state?.challengeType;
   const specificProblemId = location.state?.specificProblemId;
@@ -41,7 +42,6 @@ const CodingInterface = ({
   const [language, setLanguage] = useState('python');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showExitModal, setShowExitModal] = useState(false);
-  const [showPauseModal, setShowPauseModal] = useState(false);
   const [showSessionMenu, setShowSessionMenu] = useState(false);
   const [sessionStartTime] = useState(Date.now());
   const [userTriedToExit, setUserTriedToExit] = useState(false);
@@ -51,30 +51,21 @@ const CodingInterface = ({
   const [isPermissionDenied, setIsPermissionDenied] = useState(false);
   const [isAttemptingReturn, setIsAttemptingReturn] = useState(false);
   const [periodicCheckCount, setPeriodicCheckCount] = useState(0);
+  const [isInitializingSession, setIsInitializingSession] = useState(false);
+  const [showRecoveryModal, setShowRecoveryModal] = useState(false);
+  const [recoverySessionData, setRecoverySessionData] = useState(null);
+  const [isRecovering, setIsRecovering] = useState(false);
   
   // Session management
   const {
     currentSession,
     isActive: isSessionActive,
-    isPaused: isSessionPaused,
-    needsRecovery,
-    recoveryData,
+    isLoading,
     startSession,
     endSession,
-    pauseSession,
-    resumeSession,
-    trackCodeChange,
-    trackTestRun,
-    trackHintUsed,
-    trackSolutionSubmitted,
-    recoverSession,
-    dismissRecovery,
-    sessionProgress,
-    liveMetrics,
-    isStarting: isStartingSession,
-    isResuming: isResumingSession,
-    isPausing,
-    isEnding
+    updateCode,
+    addEvent,
+    setSession,
   } = useSession();
   
   // Refs for cleanup and timing
@@ -82,9 +73,9 @@ const CodingInterface = ({
   const enforcementIntervalRef = useRef(null);
   const lastUserActionRef = useRef(Date.now());
   const lastAttemptRef = useRef(0);
-  const sessionStartedRef = useRef(false);
   const fullscreenCheckTimeoutRef = useRef(null);
-  const hadSessionRef = useRef(false); // Track if we had a session for navigation on end
+  const isCreatingSessionRef = useRef(false);
+  const sessionCreatedForQuestionRef = useRef(null);
 
   // Convert roadmap question to sampleQuestion format for compatibility
   const convertRoadmapQuestion = (roadmapQ) => {
@@ -151,91 +142,229 @@ const CodingInterface = ({
   }, [sessionConfig?.fullscreenActivated, currentSession?.config?.enableFullscreen, currentSession, isSessionActive]);
 
   // Reset session ref when question changes or component mounts
-  useEffect(() => {
-    // If question changes or we don't have an active session, reset the ref
-    if (!currentSession || !isSessionActive) {
-      console.log('🔄 Resetting session ref - no active session in Redux');
-      sessionStartedRef.current = false;
-    }
-  }, [selectedQuestion?.id, currentSession, isSessionActive]);
+  // Session state managed by Redux - no refs needed
 
-  // Initialize session when component mounts or when session config changes
+  // Initialize session ONCE when component mounts - with recovery check
   useEffect(() => {
     const initializeSession = async () => {
-      if (!selectedQuestion || sessionStartedRef.current) return;
+      // Skip if no question
+      if (!selectedQuestion) {
+        console.log('⏭️ Skipping session init - no question');
+        return;
+      }
       
-      console.log('🚀 CodingInterface: Initializing session for question:', selectedQuestion.title);
-      console.log('🔍 Current session state:', currentSession ? currentSession.id : 'None');
-      console.log('🔍 Needs recovery:', needsRecovery);
+      // CRITICAL: If we're expecting a roadmap question but don't have roadmapQuestion prop yet, wait!
+      // This prevents creating a session for fallback questions
+      if (roadmapId && !roadmapQuestion) {
+        console.log('⏭️ Skipping session init - waiting for roadmap question to load');
+        return;
+      }
+      
+      // Skip if already have a session
+      if (currentSession) {
+        console.log('⏭️ Skipping session init - already have session:', currentSession.sessionId);
+        setIsInitializingSession(false);
+        sessionCreatedForQuestionRef.current = selectedQuestion.id;
+        return;
+      }
+      
+      // Skip if already creating a session
+      if (isCreatingSessionRef.current) {
+        console.log('⏭️ Skipping session init - already creating');
+        return;
+      }
+      
+      // Skip if we already created a session for this question
+      if (sessionCreatedForQuestionRef.current === selectedQuestion.id) {
+        console.log('⏭️ Skipping session init - already created for this question');
+        return;
+      }
+      
+      isCreatingSessionRef.current = true;
+      setIsInitializingSession(true);
+      
+      // SPECIAL CASE: If coming from Dashboard with resumeSession state, directly load that session
+      const resumeState = location.state?.resumeSession;
+      const resumeSessionId = location.state?.sessionId;
+      
+      if (resumeState && resumeSessionId) {
+        console.log('🔄 Directly loading session from resume state:', resumeSessionId);
+        try {
+          const fullSession = await sessionAPI.getSession(resumeSessionId);
+          if (fullSession && fullSession.state === 'active') {
+            setSession(fullSession);
+            sessionCreatedForQuestionRef.current = selectedQuestion.id;
+            console.log('✅ Session loaded successfully from resume state');
+            setIsInitializingSession(false);
+            isCreatingSessionRef.current = false;
+            return;
+          }
+        } catch (error) {
+          console.error('❌ Failed to load session from resume state:', error);
+          // Fall through to normal flow
+        }
+      }
+      
+      // CHECK FOR EXISTING ACTIVE SESSION (only if not resuming)
+      try {
+        console.log('🔍 Checking for existing active session for question:', selectedQuestion.title);
+        const activeSession = await sessionAPI.getActiveSessionByQuestion(
+          String(selectedQuestion.id),
+          String(selectedQuestion.title)
+        );
+        
+        if (activeSession && activeSession.state === 'active') {
+          console.log('✅ Found existing active session:', activeSession.sessionId);
+          
+          // Calculate time since last activity
+          const lastActivity = activeSession.lastActivity || activeSession.last_activity;
+          const timePaused = lastActivity 
+            ? Math.floor((Date.now() - new Date(lastActivity).getTime()) / 1000)
+            : 0;
+          
+          // Prepare recovery data
+          const recoveryData = {
+            sessionId: activeSession.sessionId,
+            questionTitle: activeSession.questionTitle || selectedQuestion.title,
+            timePaused,
+            analytics: {
+              codeChanges: activeSession.analytics?.code_changes || 0,
+              testsRun: activeSession.analytics?.tests_run || 0,
+            }
+          };
+          
+          // Try to get the last code
+          try {
+            const codeData = await sessionAPI.getCurrentCode(activeSession.sessionId);
+            if (codeData && codeData.code) {
+              recoveryData.lastCode = {
+                code: codeData.code,
+                language: codeData.language || 'python',
+                length: codeData.code.length
+              };
+            }
+          } catch (err) {
+            console.warn('Could not fetch last code:', err);
+          }
+          
+          setRecoverySessionData(recoveryData);
+          setShowRecoveryModal(true);
+          setIsInitializingSession(false);
+          isCreatingSessionRef.current = false;
+          return;
+        }
+        
+        console.log('ℹ️ No existing session found, creating new one');
+      } catch (error) {
+        console.log('ℹ️ No existing session found or error checking:', error);
+      }
+      
+      // NO EXISTING SESSION - CREATE NEW ONE
+      console.log('🚀 Creating NEW session for:', selectedQuestion.title, 'ID:', selectedQuestion.id);
       
       try {
-        const sessionType = roadmapQuestion ? 
-          SESSION_TYPES.ROADMAP_CHALLENGE : 
-          challengeType === 'daily' ? 
-            SESSION_TYPES.DAILY_CHALLENGE : 
-            SESSION_TYPES.PRACTICE;
+        const sessionType = roadmapQuestion ? SESSION_TYPES.ROADMAP_CHALLENGE :
+          challengeType === 'daily' ? SESSION_TYPES.DAILY_CHALLENGE : SESSION_TYPES.PRACTICE;
 
-        const newSessionConfig = {
+        const sessionPayload = {
           type: sessionType,
-          questionId: selectedQuestion.id,
-          questionTitle: selectedQuestion.title,
-          roadmapId: roadmapId,
+          questionId: String(selectedQuestion.id),
+          questionTitle: String(selectedQuestion.title || 'Unknown'),
+          roadmapId: roadmapId ? String(roadmapId) : undefined,
           difficulty: selectedQuestion.difficulty,
-          language: language,
+          language: String(language),
           enableBehaviorTracking: true,
-          enableFullscreen: sessionConfig?.fullscreenActivated || false,
+          enableFullscreen: Boolean(sessionConfig?.fullscreenActivated),
           timeCommitment: sessionConfig?.timeCommitment || '30min',
           userAgreements: sessionConfig?.userAgreements || {},
         };
-
-        console.log('📞 Calling backend to start session...');
-        const sessionId = await startSession(newSessionConfig);
-        sessionStartedRef.current = true;
-        console.log('✅ Session Started - ID:', sessionId);
-        console.log('📊 Session Config:', newSessionConfig);
+        
+        console.log('📤 Sending session payload:', sessionPayload);
+        const result = await startSession(sessionPayload);
+        
+        if (result.error) {
+          console.error('❌ Session creation failed:', result.error);
+          isCreatingSessionRef.current = false;
+          alert('Failed to start session. Please refresh the page and try again.');
+          navigate('/dashboard');
+          return;
+        }
+        
+        sessionCreatedForQuestionRef.current = selectedQuestion.id;
+        console.log('✅ Session created successfully for question:', selectedQuestion.id);
+        setIsInitializingSession(false);
       } catch (error) {
-        console.error('❌ Failed to initialize coding session:', error);
+        console.error('❌ Failed to initialize session:', error);
+        isCreatingSessionRef.current = false;
+        alert('Failed to start session. Please refresh the page and try again.');
+        navigate('/dashboard');
+      } finally {
+        isCreatingSessionRef.current = false;
       }
     };
 
-    // ALWAYS start a fresh session - backend will handle ending any existing sessions
-    // Don't check currentSession locally - let backend be source of truth
-    if (!needsRecovery && !sessionStartedRef.current) {
-      console.log('🎯 Starting session initialization...');
-      initializeSession();
-    } else if (needsRecovery) {
-      console.log('⏸️ Skipping session init - recovery needed');
-    } else if (sessionStartedRef.current) {
-      console.log('⏸️ Skipping session init - already started');
-    }
-  }, [selectedQuestion, roadmapQuestion, challengeType, roadmapId, language, sessionConfig, needsRecovery, startSession]);
+    initializeSession();
+  }, [selectedQuestion?.id, currentSession]); // MINIMAL dependencies - only re-run when question ID or session changes
 
-  // Handle session recovery on mount
-  useEffect(() => {
-    if (needsRecovery && recoveryData) {
-      // Show recovery modal - it will handle the UI
-      console.log('Session recovery needed:', recoveryData);
-      console.log('Current Session ID:', currentSession?.id || 'No current session');
-    }
-  }, [needsRecovery, recoveryData, currentSession?.id]);
+  // Navigation is handled by endSession action or component unmount - no auto-navigation needed
 
-  // Navigate to dashboard when session ends
-  useEffect(() => {
-    // Track if we have an active session
-    if (currentSession && isSessionActive) {
-      hadSessionRef.current = true;
+  // Recovery modal handlers
+  const handleRecoverSession = async () => {
+    if (!recoverySessionData) return;
+    
+    setIsRecovering(true);
+    console.log('🔄 Recovering session:', recoverySessionData.sessionId);
+    
+    try {
+      // Fetch the full session data
+      const fullSession = await sessionAPI.getSession(recoverySessionData.sessionId);
+      
+      if (!fullSession) {
+        throw new Error('Session not found');
+      }
+      
+      // Load the session into Redux
+      setSession(fullSession);
+      sessionCreatedForQuestionRef.current = selectedQuestion.id;
+      
+      console.log('✅ Session recovered successfully');
+      setShowRecoveryModal(false);
+      setRecoverySessionData(null);
+    } catch (error) {
+      console.error('❌ Failed to recover session:', error);
+      alert('Failed to recover session. Starting a new session instead.');
+      setShowRecoveryModal(false);
+      setRecoverySessionData(null);
+      // Trigger new session creation
+      sessionCreatedForQuestionRef.current = null;
+      isCreatingSessionRef.current = false;
+    } finally {
+      setIsRecovering(false);
+    }
+  };
+  
+  const handleDismissRecovery = async () => {
+    if (!recoverySessionData) return;
+    
+    console.log('❌ Dismissing recovery and starting fresh session');
+    setIsRecovering(true);
+    
+    try {
+      // End the old session
+      await sessionAPI.endSession(recoverySessionData.sessionId, 'user_dismissed_recovery');
+      console.log('✅ Old session ended');
+    } catch (error) {
+      console.error('❌ Failed to end old session:', error);
     }
     
-    // If we had a session and now it's gone (and not in recovery), go to dashboard
-    if (hadSessionRef.current && !currentSession && !needsRecovery && !isSessionActive) {
-      console.log('🏠 Session ended - navigating to dashboard');
-      hadSessionRef.current = false; // Reset flag
-      
-      setTimeout(() => {
-        navigate('/dashboard');
-      }, 500); // Small delay for UX
-    }
-  }, [currentSession, isSessionActive, needsRecovery, navigate]);
+    setShowRecoveryModal(false);
+    setRecoverySessionData(null);
+    setIsRecovering(false);
+    
+    // Trigger new session creation
+    sessionCreatedForQuestionRef.current = null;
+    isCreatingSessionRef.current = false;
+  };
 
   const handleQuestionChange = (questionId) => {
     setSelectedQuestionId(questionId);
@@ -465,8 +594,7 @@ const CodingInterface = ({
         userTriedToExit,
         screenfullEnabled: screenfull.isEnabled,
         currentSession: currentSession?.id || 'None',
-        isSessionActive,
-        sessionStartedRef: sessionStartedRef.current
+        isSessionActive
       });
     }
 
@@ -688,50 +816,7 @@ const CodingInterface = ({
     };
   }, [showSessionMenu]);
 
-  // Session recovery handlers
-  const handleRecoverSession = useCallback(async () => {
-    try {
-      const success = await recoverSession();
-      if (success) {
-        console.log('Session recovered successfully');
-      }
-    } catch (error) {
-      console.error('Failed to recover session:', error);
-    }
-  }, [recoverSession]);
-
-  const handleDismissRecovery = useCallback(async () => {
-    try {
-      dismissRecovery();
-      
-      // Start a fresh session
-      if (selectedQuestion && !currentSession) {
-        const sessionType = roadmapQuestion ? 
-          SESSION_TYPES.ROADMAP_CHALLENGE : 
-          challengeType === 'daily' ? 
-            SESSION_TYPES.DAILY_CHALLENGE : 
-            SESSION_TYPES.PRACTICE;
-
-        const newSessionConfig = {
-          type: sessionType,
-          questionId: selectedQuestion.id,
-          questionTitle: selectedQuestion.title,
-          roadmapId: roadmapId,
-          difficulty: selectedQuestion.difficulty,
-          language: language,
-          enableBehaviorTracking: true,
-          enableFullscreen: sessionConfig?.fullscreenActivated || false,
-          timeCommitment: sessionConfig?.timeCommitment || '30min',
-          userAgreements: sessionConfig?.userAgreements || {},
-        };
-
-        await startSession(newSessionConfig);
-        sessionStartedRef.current = true;
-      }
-    } catch (error) {
-      console.error('Failed to dismiss recovery and start new session:', error);
-    }
-  }, [dismissRecovery, selectedQuestion, currentSession, roadmapQuestion, challengeType, roadmapId, language, sessionConfig, startSession]);
+  // Recovery is now handled at page level (Dashboard/Roadmap)
 
   // Modal handlers
   const handleContinueSession = useCallback(async () => {
@@ -763,7 +848,6 @@ const CodingInterface = ({
         reason: 'User chose to end session from fullscreen exit modal',
         timeElapsed: Date.now() - sessionStartTime
       });
-      sessionStartedRef.current = false;
       if (process.env.NODE_ENV === 'development') {
         console.log('✅ Session ended successfully');
       }
@@ -779,67 +863,8 @@ const CodingInterface = ({
     }
   }, [endSession, exitFullscreen, navigate, getCurrentFullscreenState, stopFullscreenEnforcement, roadmapId, sessionStartTime]);
 
-  // Pause session handlers
-  const handlePauseSession = useCallback(async () => {
-    try {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('⏸️ User clicked pause button');
-      }
-      
-      // First pause the local session
-      await pauseSession('user_pause');
-      
-      // Then sync with backend if we have a session
-      if (currentSession?.id) {
-        try {
-          await sessionAPI.pauseSession(currentSession.id, 'user_pause');
-          if (process.env.NODE_ENV === 'development') {
-            console.log('✅ Session paused in backend');
-          }
-        } catch (error) {
-          console.warn('Failed to pause session in backend:', error);
-          // Continue with local pause even if backend fails
-        }
-      }
-      
-      // Show pause modal
-      setShowPauseModal(true);
-      
-    } catch (error) {
-      console.error('Failed to pause session:', error);
-    }
-  }, [pauseSession, currentSession]);
 
-  const handleResumeSession = useCallback(async () => {
-    try {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('▶️ User clicked resume button');
-      }
-      
-      setShowPauseModal(false);
-      
-      // First resume the local session
-      await resumeSession();
-      
-      // Then sync with backend if we have a session
-      if (currentSession?.id) {
-        try {
-          await sessionAPI.resumeSession(currentSession.id);
-          if (process.env.NODE_ENV === 'development') {
-            console.log('✅ Session resumed in backend');
-          }
-        } catch (error) {
-          console.warn('Failed to resume session in backend:', error);
-          // Continue with local resume even if backend fails
-        }
-      }
-      
-    } catch (error) {
-      console.error('Failed to resume session:', error);
-    }
-  }, [resumeSession, currentSession]);
-
-  // Setup keyboard shortcuts (placed here after handlePauseSession and handleResumeSession are defined)
+  // Setup keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (event) => {
       // F11 key - toggle fullscreen
@@ -850,16 +875,6 @@ const CodingInterface = ({
         return;
       }
       
-      // Ctrl/Cmd + P for pause/resume
-      if ((event.ctrlKey || event.metaKey) && event.key === 'p') {
-        event.preventDefault();
-        if (isSessionActive) {
-          handlePauseSession();
-        } else if (isSessionPaused) {
-          handleResumeSession();
-        }
-      }
-      
       // Escape key - let the browser handle it naturally
       // The fullscreen change handler will detect the exit and show modal if needed
     };
@@ -868,54 +883,8 @@ const CodingInterface = ({
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [toggleFullscreen, isSessionActive, isSessionPaused, handlePauseSession, handleResumeSession, setUserTriedToExit]);
+  }, [toggleFullscreen, setUserTriedToExit]);
 
-  const handleEndSessionFromPause = useCallback(async (reason = 'user_request') => {
-    try {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('🛑 User chose to end session from pause modal');
-      }
-      
-      setShowPauseModal(false);
-      
-      // End the local session
-      try {
-        await endSession(reason, {
-          reason: 'User chose to end session from pause modal',
-          timeElapsed: Date.now() - sessionStartTime
-        });
-        sessionStartedRef.current = false;
-        
-        // Also end in backend if we have a session
-        if (currentSession?.id) {
-          try {
-            await sessionAPI.endSession(currentSession.id, reason);
-            if (process.env.NODE_ENV === 'development') {
-              console.log('✅ Session ended in backend');
-            }
-          } catch (error) {
-            console.warn('Failed to end session in backend:', error);
-          }
-        }
-        
-        if (process.env.NODE_ENV === 'development') {
-          console.log('✅ Session ended successfully');
-        }
-      } catch (error) {
-        console.error('Failed to end session properly:', error);
-      }
-      
-      // Navigate back to appropriate page
-      if (roadmapId) {
-        navigate(`/roadmap/${roadmapId}`);
-      } else {
-        navigate('/dashboard');
-      }
-      
-    } catch (error) {
-      console.error('Failed to end session from pause:', error);
-    }
-  }, [endSession, currentSession, navigate, roadmapId, sessionStartTime]);
 
   // Format elapsed time - memoized to prevent unnecessary recalculations
   const getFormattedElapsedTime = useCallback(() => {
@@ -934,12 +903,45 @@ const CodingInterface = ({
   }), [selectedQuestion?.title, showExitModal, getFormattedElapsedTime, language, challengeType, roadmapQuestion]);
 
 
+  // Show loading screen while initializing session or waiting for roadmap question
+  if (isInitializingSession || (!currentSession && selectedQuestion) || (roadmapId && !roadmapQuestion)) {
+    return (
+      <div className="h-screen bg-zinc-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
+          <h2 className="text-xl text-zinc-100 mb-2">Starting Your Coding Session...</h2>
+          <p className="text-zinc-400">
+            {roadmapId && !roadmapQuestion ? 'Loading question...' : 'Setting up your environment'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (!selectedQuestion) {
     return (
       <div className="h-screen bg-zinc-900 flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-xl text-zinc-100 mb-2">No Questions Available</h2>
           <p className="text-zinc-400">Please add some coding questions to get started.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Prevent rendering if no active session
+  if (!currentSession || !isSessionActive) {
+    return (
+      <div className="h-screen bg-zinc-900 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl text-zinc-100 mb-2">Session Required</h2>
+          <p className="text-zinc-400 mb-4">A valid session is required to start coding.</p>
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Return to Dashboard
+          </button>
         </div>
       </div>
     );
@@ -959,93 +961,21 @@ const CodingInterface = ({
                 <SessionNavbarCounter
                   session={currentSession}
                   isActive={isSessionActive}
-                  isPaused={isSessionPaused}
                 />
                 
                 {/* Session Controls Menu */}
                 <div className="relative">
-                  <button
-                    onClick={() => setShowSessionMenu(!showSessionMenu)}
-                    className="p-2 text-zinc-400 hover:text-zinc-200 rounded-lg hover:bg-zinc-700/50 transition-colors"
-                    title="Session Controls"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                    </svg>
-                  </button>
                   
-                  {/* Dropdown Menu */}
+                  {/* Dropdown Menu - Empty for now, can add future session controls here */}
                   {showSessionMenu && (
                     <div className="absolute top-full left-0 mt-2 w-48 bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg z-50">
                       <div className="py-1">
-                        {isSessionActive && (
-                          <button
-                            onClick={() => {
-                              handlePauseSession();
-                              setShowSessionMenu(false);
-                            }}
-                            className="w-full px-4 py-2 text-left text-sm text-zinc-200 hover:bg-zinc-700 flex items-center space-x-2"
-                          >
-                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                              <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
-                            </svg>
-                            <span>Pause Session</span>
-                            <span className="text-xs text-zinc-500 ml-auto">Ctrl+P</span>
-                          </button>
-                        )}
-                        
-                        {isSessionPaused && (
-                          <button
-                            onClick={() => {
-                              handleResumeSession();
-                              setShowSessionMenu(false);
-                            }}
-                            className="w-full px-4 py-2 text-left text-sm text-zinc-200 hover:bg-zinc-700 flex items-center space-x-2"
-                          >
-                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                              <path d="M8 5v14l11-7z"/>
-                            </svg>
-                            <span>Resume Session</span>
-                            <span className="text-xs text-zinc-500 ml-auto">Ctrl+P</span>
-                          </button>
-                        )}
+                        {/* Future session controls can go here */}
                       </div>
                     </div>
                   )}
                 </div>
               </div>
-            )}
-
-            {/* Development test buttons */}
-            {process.env.NODE_ENV === 'development' && !currentSession && (
-              <button
-                onClick={async () => {
-                  if (selectedQuestion) {
-                    const newSessionConfig = {
-                      type: SESSION_TYPES.PRACTICE,
-                      questionId: selectedQuestion.id,
-                      questionTitle: selectedQuestion.title,
-                      difficulty: selectedQuestion.difficulty,
-                      language: language,
-                      enableBehaviorTracking: true,
-                      enableFullscreen: false,
-                      timeCommitment: '30min',
-                      userAgreements: {},
-                    };
-                    try {
-                      await startSession(newSessionConfig);
-                      sessionStartedRef.current = true;
-                      console.log('🔧 Manual session started');
-                    } catch (error) {
-                      console.error('Failed to start manual session:', error);
-                    }
-                  }
-                }}
-                className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded"
-                title="Manually Start Session"
-              >
-                Start Session
-              </button>
             )}
         </div>
 
@@ -1142,33 +1072,22 @@ const CodingInterface = ({
         sessionInfo={sessionInfo}
       />
 
-      {/* Pause Session Modal */}
-      <PauseSessionModal
-        isVisible={showPauseModal}
-        onResume={handleResumeSession}
-        onEndSession={handleEndSessionFromPause}
-        sessionInfo={sessionInfo}
-        isPausing={isPausing}
-        isResuming={isResumingSession}
-      />
-
       {/* Session Recovery Modal */}
       <SessionRecoveryModal
-        isOpen={needsRecovery && !!recoveryData}
-        recoveryData={recoveryData}
+        isOpen={showRecoveryModal}
+        recoveryData={recoverySessionData}
         onRecover={handleRecoverSession}
         onDismiss={handleDismissRecovery}
-        isRecovering={isResumingSession}
+        isRecovering={isRecovering}
       />
-      
+
       {/* Debug info - remove in production */}
       {process.env.NODE_ENV === 'development' && (
         <div className="fixed bottom-4 left-4 bg-black/90 text-white text-xs p-3 rounded-lg z-50 max-w-md border border-zinc-600">
           <div className="font-bold text-blue-300 mb-2">🔧 Development Debug Panel</div>
-          <div>📊 Session ID: {currentSession?.id || 'None'}</div>
-          <div>⚡ Status: Active={String(isSessionActive)} | Paused={String(isSessionPaused)}</div>
-          <div>🔧 Session: Started={String(sessionStartedRef.current)} | Type={currentSession?.type || 'None'}</div>
-          <div>🔄 Recovery: needsRecovery={String(needsRecovery)} | hasData={String(!!recoveryData)}</div>
+          <div>📊 Session ID: {currentSession?.sessionId || 'None'}</div>
+          <div>⚡ Status: Active={String(isSessionActive)}</div>
+          <div>🔧 Session Type: {currentSession?.sessionType || 'None'}</div>
           <div>🖥️ Fullscreen: React={String(isFullscreen)} | Actual={String(screenfull.isEnabled && screenfull.isFullscreen)} | Modal={String(showExitModal)}</div>
           <div>📚 Screenfull: Enabled={String(screenfull.isEnabled)}</div>
           <div>🎯 Question: {selectedQuestion?.title || 'None'}</div>

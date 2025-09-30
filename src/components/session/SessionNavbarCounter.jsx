@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { 
   ClockIcon
 } from '@heroicons/react/24/outline';
+import { calculateElapsedSeconds } from '../../utils/dateUtils';
 
 const SessionNavbarCounter = ({ 
   session,
@@ -10,24 +11,51 @@ const SessionNavbarCounter = ({
   isPaused,
   className = ''
 }) => {
-  const [currentTime, setCurrentTime] = useState(Date.now());
+  const [elapsed, setElapsed] = useState(0);
 
-  // Update time every second for live duration
+  // Calculate elapsed time every second using UTC-aligned utilities
   useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentTime(Date.now());
-    }, 1000);
+    if (!session?.startTime && !session?.start_time) {
+      console.warn('⚠️ Timer: No startTime found in session:', {
+        hasSession: !!session,
+        sessionKeys: session ? Object.keys(session) : [],
+        startTime: session?.startTime,
+        start_time: session?.start_time
+      });
+      return;
+    }
 
+    const calculateElapsed = () => {
+      // Try both camelCase and snake_case
+      const startTimeStr = session.startTime || session.start_time;
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log('⏱️ Timer calculating (UTC):', {
+          startTimeStr,
+          type: typeof startTimeStr,
+          nowUTC: new Date().toISOString()
+        });
+      }
+      
+      // Use UTC-aligned calculation from dateUtils
+      const elapsedSeconds = calculateElapsedSeconds(startTimeStr);
+      setElapsed(elapsedSeconds);
+    };
+
+    // Calculate immediately
+    calculateElapsed();
+
+    // Then update every second
+    const interval = setInterval(calculateElapsed, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [session?.startTime, session?.start_time]);
 
   if (!session) return null;
 
+  // Format elapsed time as MM:SS
   const getDuration = () => {
-    const startTime = new Date(session.startTime).getTime();
-    const elapsed = currentTime - startTime;
-    const minutes = Math.floor(elapsed / (1000 * 60));
-    const seconds = Math.floor((elapsed % (1000 * 60)) / 1000);
+    const minutes = Math.floor(elapsed / 60);
+    const seconds = elapsed % 60;
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 

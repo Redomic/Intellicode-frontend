@@ -10,6 +10,7 @@ import ContributionHeatmap from '../../components/dashboard/ContributionHeatmap'
 import RoadmapsSection from '../../components/dashboard/RoadmapsSection';
 import ChallengeStartModal from '../../components/coding/ChallengeStartModal';
 import RoadmapChallengeModal from '../../components/roadmap/RoadmapChallengeModal';
+import SessionRecoveryModal from '../../components/session/SessionRecoveryModal';
 import RoadmapTracker from '../../utils/roadmapTracker';
 import { useRoadmapQuestions } from '../../hooks/useAPI';
 import useSession from '../../hooks/useSession';
@@ -24,6 +25,8 @@ const DashboardPage = () => {
   
   const [showChallengeModal, setShowChallengeModal] = useState(false);
   const [showRoadmapModal, setShowRoadmapModal] = useState(false);
+  const [showRecoveryModal, setShowRecoveryModal] = useState(false);
+  const [recoverySession, setRecoverySession] = useState(null);
   const [nextLevelInfo, setNextLevelInfo] = useState(null);
   const [activeRoadmap, setActiveRoadmap] = useState(null);
 
@@ -34,7 +37,7 @@ const DashboardPage = () => {
     sessionHistory, 
     sessionInsights, 
     sessionAnalytics,
-    loadHistory 
+    loadHistory
   } = useSession();
   
   // Load active roadmap on component mount and when refreshed
@@ -64,80 +67,91 @@ const DashboardPage = () => {
   }, [activeRoadmap, questionsData]);
 
   const handleStartChallenge = async () => {
+    console.log('🔍 Checking for active session before starting challenge...');
+    
+    // Check if user has any active session
     try {
-      console.log('🔍 Checking for active session before starting challenge...');
-      
-      // Check if there's an active session in the backend
       const activeSession = await sessionAPI.getActiveSession();
       
-      if (activeSession) {
+      if (activeSession && activeSession.state === 'active') {
         console.log('✅ Active session found:', activeSession);
+        console.log('🔄 Showing recovery modal for session:', activeSession.sessionId);
+        console.log('📋 Recovery session data:', {
+          questionTitle: activeSession.questionTitle,
+          questionId: activeSession.questionId,
+          startTime: activeSession.startTime,
+          state: activeSession.state
+        });
         
-        // If there's a roadmap session, we need to find the question key
-        if (activeSession.roadmap_id) {
-          console.log('🔍 Fetching roadmap questions to find question key...');
-          // Fetch the roadmap questions to find the question key
-          try {
-            const response = await fetch(`${import.meta.env.VITE_API_URL}/roadmaps/${activeSession.roadmap_id}/questions`, {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
-              }
-            });
-            
-            if (response.ok) {
-              const questions = await response.json();
-              // Find the question by title (more reliable than numeric ID)
-              const question = questions.find(q => 
-                q.leetcode_title === activeSession.question_title || 
-                q.original_title === activeSession.question_title
-              );
-              
-              if (question) {
-                const questionKey = question.key || question._key;
-                console.log('✅ Found question key:', questionKey);
-                navigate(`/challenge/${activeSession.roadmap_id}/${questionKey}`);
-                return;
-              } else {
-                console.warn('⚠️ Question not found in roadmap, showing modal');
-              }
-            }
-          } catch (error) {
-            console.error('Error fetching roadmap questions:', error);
-          }
-        } else if (activeSession.question_id) {
-          // Daily challenge - use numeric ID
-          navigate('/practice', { 
-            state: { 
-              challengeType: 'daily',
-              specificProblemId: activeSession.question_id
-            } 
-          });
-          return;
-        }
-        
-        // Fallback: show modal if we couldn't navigate
-        if (nextLevelInfo) {
-          setShowRoadmapModal(true);
-        } else {
-          setShowChallengeModal(true);
-        }
-      } else {
-        console.log('ℹ️ No active session, showing challenge modal');
-        // No active session, show the appropriate modal
-        if (nextLevelInfo) {
-          setShowRoadmapModal(true);
-        } else {
-          setShowChallengeModal(true);
-        }
+        // Show recovery modal
+        setRecoverySession(activeSession);
+        setShowRecoveryModal(true);
+        console.log('✅ Modal state set: showRecoveryModal = true');
+        return;
       }
     } catch (error) {
-      console.error('Error checking for active session:', error);
-      // On error, show modal anyway
-      if (nextLevelInfo) {
-        setShowRoadmapModal(true);
-      } else {
-        setShowChallengeModal(true);
-      }
+      console.log('ℹ️  No active session found, proceeding with new challenge');
+    }
+    
+    // No active session, show the appropriate challenge modal
+    if (nextLevelInfo) {
+      setShowRoadmapModal(true);
+    } else {
+      setShowChallengeModal(true);
+    }
+  };
+  
+  const handleRecoverSession = () => {
+    console.log('🔄 Recovering session from dashboard:', recoverySession.sessionId);
+    
+    // Close recovery modal
+    setShowRecoveryModal(false);
+    
+    // Navigate to the appropriate page based on session type
+    const sessionType = recoverySession.sessionType;
+    const questionId = recoverySession.questionId;
+    const roadmapId = recoverySession.roadmapId;
+    
+    if (sessionType === 'roadmap_challenge' && roadmapId && questionId) {
+      console.log('🎯 Navigating to roadmap challenge:', roadmapId, questionId);
+      navigate(`/challenge/${roadmapId}/${questionId}`, {
+        state: {
+          resumeSession: true,
+          sessionId: recoverySession.sessionId
+        }
+      });
+    } else {
+      console.log('🎯 Navigating to practice challenge:', questionId);
+      navigate('/practice', {
+        state: {
+          resumeSession: true,
+          sessionId: recoverySession.sessionId,
+          specificProblemId: questionId
+        }
+      });
+    }
+  };
+  
+  const handleDismissRecovery = async () => {
+    console.log('❌ Dismissing recovery and ending session:', recoverySession.sessionId);
+    
+    try {
+      // End the old session
+      await sessionAPI.endSession(recoverySession.sessionId, 'user_dismissed');
+      console.log('✅ Old session ended successfully');
+    } catch (error) {
+      console.error('❌ Failed to end old session:', error);
+    }
+    
+    // Close recovery modal
+    setShowRecoveryModal(false);
+    setRecoverySession(null);
+    
+    // Show the appropriate challenge modal
+    if (nextLevelInfo) {
+      setShowRoadmapModal(true);
+    } else {
+      setShowChallengeModal(true);
     }
   };
 
@@ -224,6 +238,31 @@ const DashboardPage = () => {
         question={nextLevelInfo?.question}
         isCompleted={nextLevelInfo ? RoadmapTracker.getCompletedLevels(nextLevelInfo.courseId).has(nextLevelInfo.question.step_number) : false}
       />
+
+      {/* Session Recovery Modal */}
+      <SessionRecoveryModal
+        isOpen={showRecoveryModal}
+        onRecover={handleRecoverSession}
+        onDismiss={handleDismissRecovery}
+        recoveryData={recoverySession ? {
+          questionTitle: recoverySession.questionTitle || recoverySession.question_title,
+          questionId: recoverySession.questionId || recoverySession.question_id,
+          sessionType: recoverySession.sessionType || recoverySession.session_type,
+          roadmapId: recoverySession.roadmapId || recoverySession.roadmap_id,
+          timePaused: recoverySession.startTime 
+            ? Math.floor((Date.now() - new Date(recoverySession.startTime).getTime()) / 1000)
+            : 0,
+          lastCode: recoverySession.currentCode ? {
+            code: recoverySession.currentCode,
+            language: recoverySession.programmingLanguage || 'python'
+          } : null,
+          analytics: {
+            codeChanges: 0,
+            testsRun: 0
+          }
+        } : null}
+      />
+
     </div>
   );
 };

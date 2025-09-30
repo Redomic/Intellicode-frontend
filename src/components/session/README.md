@@ -257,3 +257,4 @@ console.log(window.sessionOrchestrator.getSessionAnalytics());
 3. **Track meaningful events** to build useful analytics
 4. **Handle session recovery** to provide smooth user experience
 5. **Monitor session performance** to optimize the experience
+

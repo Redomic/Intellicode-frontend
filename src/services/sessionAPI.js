@@ -3,6 +3,17 @@ import axiosInstance from '../utils/axios';
 /**
  * Session Management API
  * Handles backend session operations for pause/resume/end functionality
+ * 
+ * IMPORTANT: UTC Timezone Alignment
+ * ==================================
+ * - Backend sends all timestamps as UTC ISO strings with 'Z' suffix
+ *   Example: "2025-09-30T18:34:11.701Z"
+ * 
+ * - Frontend uses UTC milliseconds (Date.now(), .getTime()) for calculations
+ * 
+ * - All datetime parsing/formatting uses dateUtils.js for consistency
+ * 
+ * This ensures session timers work correctly across all timezones.
  */
 
 class SessionAPI {
@@ -19,34 +30,6 @@ class SessionAPI {
       return response.data;
     } catch (error) {
       console.error('Failed to start session:', error);
-      throw this.handleError(error);
-    }
-  }
-
-  /**
-   * Pause an active session
-   */
-  async pauseSession(sessionId, reason = 'user_request') {
-    try {
-      const response = await axiosInstance.post(`${this.baseURL}/${sessionId}/pause`, {
-        reason
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Failed to pause session:', error);
-      throw this.handleError(error);
-    }
-  }
-
-  /**
-   * Resume a paused session
-   */
-  async resumeSession(sessionId) {
-    try {
-      const response = await axiosInstance.post(`${this.baseURL}/${sessionId}/resume`);
-      return response.data;
-    } catch (error) {
-      console.error('Failed to resume session:', error);
       throw this.handleError(error);
     }
   }
@@ -72,11 +55,57 @@ class SessionAPI {
   async getSession(sessionId) {
     try {
       const response = await axiosInstance.get(`${this.baseURL}/${sessionId}`);
-      return response.data;
+      return this.transformSession(response.data);
     } catch (error) {
       console.error('Failed to get session:', error);
       throw this.handleError(error);
     }
+  }
+
+  /**
+   * Transform backend session to frontend format (snake_case -> camelCase)
+   */
+  transformSession(session) {
+    if (!session) {
+      console.warn('⚠️ transformSession called with null/undefined session');
+      return null;
+    }
+    
+    const transformed = {
+      ...session,
+      sessionId: session.session_id || session.sessionId,
+      sessionType: session.session_type || session.sessionType,
+      questionId: session.question_id || session.questionId,
+      questionTitle: session.question_title || session.questionTitle,
+      roadmapId: session.roadmap_id || session.roadmapId,
+      userKey: session.user_key || session.userKey,
+      startTime: session.start_time || session.startTime,
+      endTime: session.end_time || session.endTime,
+      lastActivity: session.last_activity || session.lastActivity,
+      pauseTime: session.pause_time || session.pauseTime,
+      resumeTime: session.resume_time || session.resumeTime,
+      pauseDurationSeconds: session.pause_duration_seconds || session.pauseDurationSeconds,
+      currentCode: session.current_code || session.currentCode,
+      starterCode: session.starter_code || session.starterCode,
+      testCases: session.test_cases || session.testCases,
+      skillCategories: session.skill_categories || session.skillCategories,
+      enableBehaviorTracking: session.enable_behavior_tracking ?? session.enableBehaviorTracking,
+      enableFullscreen: session.enable_fullscreen ?? session.enableFullscreen,
+      timeCommitment: session.time_commitment || session.timeCommitment,
+      userAgreements: session.user_agreements || session.userAgreements,
+      behaviorSessionId: session.behavior_session_id || session.behaviorSessionId,
+    };
+    
+    console.log('🔄 transformSession DETAILED:', {
+      'INPUT start_time': session.start_time,
+      'INPUT startTime': session.startTime,
+      'OUTPUT startTime': transformed.startTime,
+      'OUTPUT sessionId': transformed.sessionId,
+      'OUTPUT state': transformed.state,
+      'Raw session keys': Object.keys(session).join(', ')
+    });
+    
+    return transformed;
   }
 
   /**
@@ -85,9 +114,26 @@ class SessionAPI {
   async getActiveSession() {
     try {
       const response = await axiosInstance.get(`${this.baseURL}/active/current`);
-      return response.data;
+      return this.transformSession(response.data);
     } catch (error) {
       console.error('Failed to get active session:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get user's active session for a specific question
+   */
+  async getActiveSessionByQuestion(questionId = null, questionTitle = null) {
+    try {
+      const params = {};
+      if (questionId) params.question_id = questionId;
+      if (questionTitle) params.question_title = questionTitle;
+      
+      const response = await axiosInstance.get(`${this.baseURL}/active/by-question`, { params });
+      return this.transformSession(response.data);
+    } catch (error) {
+      console.error('Failed to get active session by question:', error);
       throw this.handleError(error);
     }
   }
@@ -100,7 +146,9 @@ class SessionAPI {
       const response = await axiosInstance.get(`${this.baseURL}/`, {
         params: { limit, include_active: includeActive }
       });
-      return response.data;
+      return Array.isArray(response.data) 
+        ? response.data.map(session => this.transformSession(session))
+        : response.data;
     } catch (error) {
       console.error('Failed to list sessions:', error);
       throw this.handleError(error);
