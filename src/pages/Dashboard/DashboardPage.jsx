@@ -12,7 +12,7 @@ import ChallengeStartModal from '../../components/coding/ChallengeStartModal';
 import RoadmapChallengeModal from '../../components/roadmap/RoadmapChallengeModal';
 import SessionRecoveryModal from '../../components/session/SessionRecoveryModal';
 import RoadmapTracker from '../../utils/roadmapTracker';
-import { useRoadmapQuestions } from '../../hooks/useAPI';
+import { useRoadmapQuestions, useCompletedQuestions } from '../../hooks/useAPI';
 import useSession from '../../hooks/useSession';
 import SessionAnalytics from '../../components/session/SessionAnalytics';
 import sessionAPI from '../../services/sessionAPI';
@@ -31,6 +31,7 @@ const DashboardPage = () => {
   const [activeRoadmap, setActiveRoadmap] = useState(null);
 
   const { data: questionsData } = useRoadmapQuestions(activeRoadmap?.courseId);
+  const { data: completedStepsData } = useCompletedQuestions(activeRoadmap?.courseId);
   
   // Session management
   const { 
@@ -51,6 +52,14 @@ const DashboardPage = () => {
     // Load session history for analytics
     loadHistory(20);
   }, [loadHistory]);
+
+  // Sync roadmap progress from backend when completed steps are loaded
+  useEffect(() => {
+    if (activeRoadmap && completedStepsData && questionsData && questionsData.length > 0) {
+      console.log('🔄 Syncing roadmap progress on dashboard:', completedStepsData);
+      RoadmapTracker.syncProgressFromBackend(activeRoadmap.courseId, completedStepsData, questionsData);
+    }
+  }, [activeRoadmap, completedStepsData, questionsData]);
 
   // Update next level info when questions or active roadmap changes
   useEffect(() => {

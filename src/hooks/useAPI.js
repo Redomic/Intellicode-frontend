@@ -54,6 +54,13 @@ export const useRoadmapQuestions = (course) => {
   });
 };
 
+export const useCompletedQuestions = (course) => {
+  return useAxios(`/roadmaps/${course}/completed`, {
+    immediate: !!course,
+    deps: [course]
+  });
+};
+
 export default {
   useUser,
   useUpdateProfile,
@@ -64,4 +71,5 @@ export default {
   useStats,
   useRoadmaps,
   useRoadmapQuestions,
+  useCompletedQuestions,
 };

@@ -369,6 +369,39 @@ export class RoadmapTracker {
   }
 
   /**
+   * Sync roadmap progress from backend (completed questions based on accepted submissions)
+   * @param {string} courseId - The course identifier
+   * @param {Array} completedStepNumbers - Array of step numbers that are completed (from backend)
+   * @param {Array} allQuestions - All questions in the course for unlocking logic
+   */
+  static syncProgressFromBackend(courseId, completedStepNumbers, allQuestions = []) {
+    const completed = new Set(completedStepNumbers);
+    const unlocked = this.getUnlockedLevels(courseId);
+
+    // Update completed levels
+    this.setCompletedLevels(courseId, completed);
+
+    // Update unlocked levels based on completion
+    const sortedQuestions = [...allQuestions].sort((a, b) => a.step_number - b.step_number);
+    
+    // Always unlock level 1
+    unlocked.add(1);
+
+    // For each completed question, unlock the next one
+    for (const stepNumber of completedStepNumbers) {
+      const currentIndex = sortedQuestions.findIndex(q => q.step_number === stepNumber);
+      if (currentIndex !== -1 && currentIndex < sortedQuestions.length - 1) {
+        const nextQuestion = sortedQuestions[currentIndex + 1];
+        unlocked.add(nextQuestion.step_number);
+      }
+    }
+
+    this.setUnlockedLevels(courseId, unlocked);
+
+    console.log(`✅ Synced progress for ${courseId}: ${completed.size} completed, ${unlocked.size} unlocked`);
+  }
+
+  /**
    * Get progress statistics for the active roadmap
    * @param {Array} questions - All questions in the roadmap
    * @returns {Object} - Progress statistics

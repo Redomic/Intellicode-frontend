@@ -34,14 +34,8 @@ export const useGetSubmissionHistory = () => {
   return {
     ...hook,
     execute: async (params = {}) => {
-      // Build query string from params
-      const queryParams = new URLSearchParams();
-      if (params.question_key) queryParams.append('question_key', params.question_key);
-      if (params.limit) queryParams.append('limit', params.limit);
-      if (params.offset) queryParams.append('offset', params.offset);
-      
-      const url = `/submissions/history?${queryParams.toString()}`;
-      return hook.execute({ url });
+      // Pass params directly - useAxios will handle them as query parameters
+      return hook.execute(params);
     }
   };
 };

@@ -5,7 +5,7 @@ import { ChevronLeftIcon } from '@heroicons/react/24/outline';
 import { FireIcon as FireSolid, StarIcon as StarSolid } from '@heroicons/react/24/solid';
 import Navigation from '../../components/Navigation';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
-import { useRoadmapQuestions } from '../../hooks/useAPI';
+import { useRoadmapQuestions, useCompletedQuestions } from '../../hooks/useAPI';
 import LevelNode from '../../components/roadmap/LevelNode';
 import RoadmapTracker from '../../utils/roadmapTracker';
 import RoadmapChallengeModal from '../../components/roadmap/RoadmapChallengeModal';
@@ -17,6 +17,7 @@ const RoadmapPage = () => {
   const { course } = useParams();
   const navigate = useNavigate();
   const { data: questionsData, loading, error } = useRoadmapQuestions(course);
+  const { data: completedStepsData, loading: loadingCompleted } = useCompletedQuestions(course);
   const [completedLevels, setCompletedLevels] = useState(new Set());
   const [unlockedLevels, setUnlockedLevels] = useState(new Set([1])); // First level is always unlocked
   const [showChallengeModal, setShowChallengeModal] = useState(false);
@@ -28,6 +29,21 @@ const RoadmapPage = () => {
   const { endSession } = useSession();
 
   const questions = questionsData || [];
+  
+  // Sync progress from backend when completed steps are loaded
+  useEffect(() => {
+    if (completedStepsData && questions.length > 0 && course) {
+      console.log('🔄 Syncing roadmap progress from backend:', completedStepsData);
+      RoadmapTracker.syncProgressFromBackend(course, completedStepsData, questions);
+      
+      // Update local state
+      const completed = RoadmapTracker.getCompletedLevels(course);
+      const unlocked = RoadmapTracker.getUnlockedLevels(course);
+      
+      setCompletedLevels(completed);
+      setUnlockedLevels(unlocked);
+    }
+  }, [completedStepsData, questions, course]);
   
   // Load progress from roadmap tracker and check if roadmap is activated
   useEffect(() => {
@@ -45,7 +61,7 @@ const RoadmapPage = () => {
       
       RoadmapTracker.setActiveRoadmap(course, courseName);
 
-      // Load progress from localStorage
+      // Load progress from localStorage (will be overridden by backend sync if available)
       const completed = RoadmapTracker.getCompletedLevels(course);
       const unlocked = RoadmapTracker.getUnlockedLevels(course);
 
