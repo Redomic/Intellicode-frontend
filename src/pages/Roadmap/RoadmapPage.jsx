@@ -30,22 +30,21 @@ const RoadmapPage = () => {
 
   const questions = questionsData || [];
   
-  // Sync progress from backend when completed steps are loaded
+  // Calculate progress from backend data (no localStorage)
   useEffect(() => {
     if (completedStepsData && questions.length > 0 && course) {
-      console.log('🔄 Syncing roadmap progress from backend:', completedStepsData);
-      RoadmapTracker.syncProgressFromBackend(course, completedStepsData, questions);
+      console.log('🔄 Loading roadmap progress from backend:', completedStepsData);
       
-      // Update local state
-      const completed = RoadmapTracker.getCompletedLevels(course);
-      const unlocked = RoadmapTracker.getUnlockedLevels(course);
+      // Convert to Sets for state
+      const completed = new Set(completedStepsData);
+      const unlocked = RoadmapTracker.calculateUnlockedLevels(completedStepsData, questions);
       
       setCompletedLevels(completed);
       setUnlockedLevels(unlocked);
     }
   }, [completedStepsData, questions, course]);
   
-  // Load progress from roadmap tracker and check if roadmap is activated
+  // Check if roadmap is activated
   useEffect(() => {
     if (questions.length > 0 && course) {
       // Only allow access if roadmap is activated
@@ -60,19 +59,6 @@ const RoadmapPage = () => {
                         course.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
       
       RoadmapTracker.setActiveRoadmap(course, courseName);
-
-      // Load progress from localStorage (will be overridden by backend sync if available)
-      const completed = RoadmapTracker.getCompletedLevels(course);
-      const unlocked = RoadmapTracker.getUnlockedLevels(course);
-
-      // Ensure at least the first level is unlocked
-      if (unlocked.size === 0) {
-        unlocked.add(1);
-        RoadmapTracker.setUnlockedLevels(course, unlocked);
-      }
-
-      setCompletedLevels(completed);
-      setUnlockedLevels(unlocked);
     }
   }, [questions, course, navigate]);
 

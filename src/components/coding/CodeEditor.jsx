@@ -11,8 +11,6 @@ import SubmissionSuccessModal from './SubmissionSuccessModal';
 import { LoadingButton } from '../ui/InlineLoading';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import { useNavigate } from 'react-router-dom';
-import RoadmapTracker from '../../utils/roadmapTracker';
-import axiosInstance from '../../utils/axios';
 
 /**
  * CodeEditor - Right panel with code editor and execution controls
@@ -726,22 +724,10 @@ const CodeEditor = ({
         });
         setShowSuccessModal(true);
         
-        // Sync roadmap progress if this is a roadmap challenge
+        // No need to sync progress to localStorage anymore
+        // Backend is the source of truth and will be fetched on next roadmap page load
         if (question.course) {
-          try {
-            console.log('🎯 Syncing roadmap progress for course:', question.course);
-            const response = await axiosInstance.get(`/roadmaps/${question.course}/completed`);
-            const completedSteps = response.data || [];
-            
-            // Get all questions for this roadmap to determine unlocking
-            const questionsResponse = await axiosInstance.get(`/roadmaps/${question.course}/questions?limit=1000`);
-            const allQuestions = questionsResponse.data || [];
-            
-            // Sync progress
-            RoadmapTracker.syncProgressFromBackend(question.course, completedSteps, allQuestions);
-          } catch (error) {
-            console.error('Failed to sync roadmap progress:', error);
-          }
+          console.log('✅ Roadmap progress updated in backend for course:', question.course);
         }
       }
     } catch (error) {

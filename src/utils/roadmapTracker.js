@@ -1,6 +1,7 @@
 /**
  * Utility functions for tracking user's active roadmap and progress
  * Now integrates with backend API for course activation
+ * Progress tracking is done via backend only - no localStorage for user progress
  */
 
 import courseActivationAPI from '../services/courseActivationAPI';
@@ -8,8 +9,6 @@ import courseActivationAPI from '../services/courseActivationAPI';
 const STORAGE_KEYS = {
   ACTIVE_ROADMAP: 'intellicode_active_roadmap',
   ACTIVE_COURSE: 'intellicode_active_course', // Single course storage
-  COMPLETED_LEVELS: 'intellicode_completed_levels',
-  UNLOCKED_LEVELS: 'intellicode_unlocked_levels'
 };
 
 export class RoadmapTracker {
@@ -227,101 +226,45 @@ export class RoadmapTracker {
   }
 
   /**
-   * Set completed levels for a course
-   * @param {string} courseId - The course identifier
-   * @param {Set|Array} completedLevels - Set or array of completed level numbers
-   */
-  static setCompletedLevels(courseId, completedLevels) {
-    const levelsArray = Array.isArray(completedLevels) 
-      ? completedLevels 
-      : Array.from(completedLevels);
-    
-    const allCompleted = this.getAllCompletedLevels();
-    allCompleted[courseId] = levelsArray;
-    
-    localStorage.setItem(STORAGE_KEYS.COMPLETED_LEVELS, JSON.stringify(allCompleted));
-  }
-
-  /**
-   * Get completed levels for a specific course
-   * @param {string} courseId - The course identifier
-   * @returns {Set} - Set of completed level numbers
-   */
-  static getCompletedLevels(courseId) {
-    const allCompleted = this.getAllCompletedLevels();
-    return new Set(allCompleted[courseId] || []);
-  }
-
-  /**
-   * Get all completed levels for all courses
-   * @returns {Object} - Object mapping courseId to arrays of completed levels
-   */
-  static getAllCompletedLevels() {
-    const stored = localStorage.getItem(STORAGE_KEYS.COMPLETED_LEVELS);
-    if (!stored) return {};
-    
-    try {
-      return JSON.parse(stored);
-    } catch {
-      return {};
-    }
-  }
-
-  /**
-   * Set unlocked levels for a course
-   * @param {string} courseId - The course identifier
-   * @param {Set|Array} unlockedLevels - Set or array of unlocked level numbers
-   */
-  static setUnlockedLevels(courseId, unlockedLevels) {
-    const levelsArray = Array.isArray(unlockedLevels) 
-      ? unlockedLevels 
-      : Array.from(unlockedLevels);
-    
-    const allUnlocked = this.getAllUnlockedLevels();
-    allUnlocked[courseId] = levelsArray;
-    
-    localStorage.setItem(STORAGE_KEYS.UNLOCKED_LEVELS, JSON.stringify(allUnlocked));
-  }
-
-  /**
-   * Get unlocked levels for a specific course
-   * @param {string} courseId - The course identifier
+   * Calculate unlocked levels based on completed levels
+   * @param {Array|Set} completedStepNumbers - Array or Set of completed step numbers
+   * @param {Array} allQuestions - All questions in the course for unlocking logic
    * @returns {Set} - Set of unlocked level numbers
    */
-  static getUnlockedLevels(courseId) {
-    const allUnlocked = this.getAllUnlockedLevels();
-    const levels = allUnlocked[courseId] || [1]; // First level is always unlocked
-    return new Set(levels);
-  }
-
-  /**
-   * Get all unlocked levels for all courses
-   * @returns {Object} - Object mapping courseId to arrays of unlocked levels
-   */
-  static getAllUnlockedLevels() {
-    const stored = localStorage.getItem(STORAGE_KEYS.UNLOCKED_LEVELS);
-    if (!stored) return {};
+  static calculateUnlockedLevels(completedStepNumbers, allQuestions = []) {
+    const completed = new Set(completedStepNumbers);
+    const unlocked = new Set([1]); // First level is always unlocked
     
-    try {
-      return JSON.parse(stored);
-    } catch {
-      return {};
+    if (allQuestions.length === 0) return unlocked;
+
+    // Sort questions by step number
+    const sortedQuestions = [...allQuestions].sort((a, b) => a.step_number - b.step_number);
+    
+    // For each completed question, unlock the next one
+    for (const stepNumber of completed) {
+      const currentIndex = sortedQuestions.findIndex(q => q.step_number === stepNumber);
+      if (currentIndex !== -1 && currentIndex < sortedQuestions.length - 1) {
+        const nextQuestion = sortedQuestions[currentIndex + 1];
+        unlocked.add(nextQuestion.step_number);
+      }
     }
+
+    return unlocked;
   }
 
   /**
-   * Find the next level the user should attempt in their active roadmap
+   * Find the next level the user should attempt
+   * @param {Array|Set} completedStepNumbers - Array or Set of completed step numbers
    * @param {Array} questions - Array of questions from the roadmap
    * @returns {Object|null} - The next question to attempt or null if none
    */
-  static getNextLevel(questions) {
-    const activeRoadmap = this.getActiveRoadmap();
-    if (!activeRoadmap || !questions || questions.length === 0) {
+  static getNextLevel(completedStepNumbers, questions) {
+    if (!questions || questions.length === 0) {
       return null;
     }
 
-    const completed = this.getCompletedLevels(activeRoadmap.courseId);
-    const unlocked = this.getUnlockedLevels(activeRoadmap.courseId);
+    const completed = new Set(completedStepNumbers);
+    const unlocked = this.calculateUnlockedLevels(completedStepNumbers, questions);
 
     // Sort questions by step_number
     const sortedQuestions = [...questions].sort((a, b) => a.step_number - b.step_number);
@@ -343,77 +286,20 @@ export class RoadmapTracker {
     return null;
   }
 
-  /**
-   * Mark a level as completed and unlock the next level
-   * @param {string} courseId - The course identifier
-   * @param {number} levelNumber - The level number that was completed
-   * @param {Array} allQuestions - All questions in the course for unlocking logic
-   */
-  static completeLevel(courseId, levelNumber, allQuestions = []) {
-    const completed = this.getCompletedLevels(courseId);
-    const unlocked = this.getUnlockedLevels(courseId);
-
-    // Mark as completed
-    completed.add(levelNumber);
-    this.setCompletedLevels(courseId, completed);
-
-    // Unlock next level(s) - simple sequential unlocking
-    const sortedQuestions = [...allQuestions].sort((a, b) => a.step_number - b.step_number);
-    const currentIndex = sortedQuestions.findIndex(q => q.step_number === levelNumber);
-    
-    if (currentIndex !== -1 && currentIndex < sortedQuestions.length - 1) {
-      const nextQuestion = sortedQuestions[currentIndex + 1];
-      unlocked.add(nextQuestion.step_number);
-      this.setUnlockedLevels(courseId, unlocked);
-    }
-  }
 
   /**
-   * Sync roadmap progress from backend (completed questions based on accepted submissions)
-   * @param {string} courseId - The course identifier
-   * @param {Array} completedStepNumbers - Array of step numbers that are completed (from backend)
-   * @param {Array} allQuestions - All questions in the course for unlocking logic
-   */
-  static syncProgressFromBackend(courseId, completedStepNumbers, allQuestions = []) {
-    const completed = new Set(completedStepNumbers);
-    const unlocked = this.getUnlockedLevels(courseId);
-
-    // Update completed levels
-    this.setCompletedLevels(courseId, completed);
-
-    // Update unlocked levels based on completion
-    const sortedQuestions = [...allQuestions].sort((a, b) => a.step_number - b.step_number);
-    
-    // Always unlock level 1
-    unlocked.add(1);
-
-    // For each completed question, unlock the next one
-    for (const stepNumber of completedStepNumbers) {
-      const currentIndex = sortedQuestions.findIndex(q => q.step_number === stepNumber);
-      if (currentIndex !== -1 && currentIndex < sortedQuestions.length - 1) {
-        const nextQuestion = sortedQuestions[currentIndex + 1];
-        unlocked.add(nextQuestion.step_number);
-      }
-    }
-
-    this.setUnlockedLevels(courseId, unlocked);
-
-    console.log(`✅ Synced progress for ${courseId}: ${completed.size} completed, ${unlocked.size} unlocked`);
-  }
-
-  /**
-   * Get progress statistics for the active roadmap
+   * Get progress statistics
+   * @param {Array|Set} completedStepNumbers - Array or Set of completed step numbers
    * @param {Array} questions - All questions in the roadmap
    * @returns {Object} - Progress statistics
    */
-  static getProgressStats(questions) {
-    const activeRoadmap = this.getActiveRoadmap();
-    if (!activeRoadmap || !questions) {
+  static getProgressStats(completedStepNumbers, questions) {
+    if (!questions || questions.length === 0) {
       return { totalLevels: 0, completedLevels: 0, unlockedLevels: 0, progressPercentage: 0 };
     }
 
-    const completed = this.getCompletedLevels(activeRoadmap.courseId);
-    const unlocked = this.getUnlockedLevels(activeRoadmap.courseId);
+    const completed = new Set(completedStepNumbers);
+    const unlocked = this.calculateUnlockedLevels(completedStepNumbers, questions);
 
     return {
       totalLevels: questions.length,
@@ -429,8 +315,6 @@ export class RoadmapTracker {
   static clearAllData() {
     localStorage.removeItem(STORAGE_KEYS.ACTIVE_ROADMAP);
     localStorage.removeItem(STORAGE_KEYS.ACTIVE_COURSE);
-    localStorage.removeItem(STORAGE_KEYS.COMPLETED_LEVELS);
-    localStorage.removeItem(STORAGE_KEYS.UNLOCKED_LEVELS);
   }
 }
 

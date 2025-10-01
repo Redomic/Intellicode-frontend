@@ -53,18 +53,12 @@ const DashboardPage = () => {
     loadHistory(20);
   }, [loadHistory]);
 
-  // Sync roadmap progress from backend when completed steps are loaded
+  // Calculate next level from backend data (no localStorage)
   useEffect(() => {
     if (activeRoadmap && completedStepsData && questionsData && questionsData.length > 0) {
-      console.log('🔄 Syncing roadmap progress on dashboard:', completedStepsData);
-      RoadmapTracker.syncProgressFromBackend(activeRoadmap.courseId, completedStepsData, questionsData);
-    }
-  }, [activeRoadmap, completedStepsData, questionsData]);
-
-  // Update next level info when questions or active roadmap changes
-  useEffect(() => {
-    if (activeRoadmap && questionsData && questionsData.length > 0) {
-      const nextLevel = RoadmapTracker.getNextLevel(questionsData);
+      console.log('🔄 Calculating next level from backend data:', completedStepsData);
+      
+      const nextLevel = RoadmapTracker.getNextLevel(completedStepsData, questionsData);
       setNextLevelInfo(nextLevel ? {
         question: nextLevel,
         courseName: activeRoadmap.courseName,
@@ -73,7 +67,7 @@ const DashboardPage = () => {
     } else {
       setNextLevelInfo(null);
     }
-  }, [activeRoadmap, questionsData]);
+  }, [activeRoadmap, completedStepsData, questionsData]);
 
   const handleStartChallenge = async () => {
     console.log('🔍 Checking for active session before starting challenge...');
@@ -245,7 +239,7 @@ const DashboardPage = () => {
         onClose={() => setShowRoadmapModal(false)}
         onStartChallenge={handleRoadmapChallengeStart}
         question={nextLevelInfo?.question}
-        isCompleted={nextLevelInfo ? RoadmapTracker.getCompletedLevels(nextLevelInfo.courseId).has(nextLevelInfo.question.step_number) : false}
+        isCompleted={nextLevelInfo && completedStepsData ? completedStepsData.includes(nextLevelInfo.question.step_number) : false}
       />
 
       {/* Session Recovery Modal */}
