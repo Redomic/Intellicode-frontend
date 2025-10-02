@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import SkeletonLoader from '../ui/SkeletonLoader';
 import LoadingSpinner from '../ui/LoadingSpinner';
+import AIAssistantChat from './AIAssistantChat';
 
 /**
- * QuestionPanel - Left panel displaying coding question details
+ * QuestionPanel - Left panel displaying coding question details and AI Assistant
  */
 const QuestionPanel = ({ 
   question, 
@@ -11,7 +12,14 @@ const QuestionPanel = ({
   availableQuestions, 
   isLoading = false,
   isRoadmapChallenge = false,
-  roadmapId = null
+  roadmapId = null,
+  // AI Assistant props
+  chatMessages = [],
+  onSendMessage,
+  onRequestHint,
+  isLoadingHint = false,
+  isLoadingChat = false,
+  currentCode = ''
 }) => {
   const [activeTab, setActiveTab] = useState('problem');
 
@@ -76,7 +84,16 @@ const QuestionPanel = ({
   };
 
   const tabs = [
-    { id: 'problem', label: 'Problem' }
+    { id: 'problem', label: 'Problem', icon: (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      </svg>
+    )},
+    { id: 'assistant', label: 'AI Assistant', icon: (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+      </svg>
+    )}
   ];
 
   if (isLoading) {
@@ -180,17 +197,43 @@ const QuestionPanel = ({
         `
       }} />
       
-      {/* Question Header */}
-      <div className="p-6 border-b border-zinc-700">
-        {isRoadmapChallenge && question.step_number && (
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-xs text-zinc-500">Step {question.step_number}</span>
-            <span className="text-xs text-zinc-600">•</span>
-            <span className="text-xs text-blue-400 capitalize">
-              {roadmapId?.replace('-', ' ')} Challenge
-            </span>
-          </div>
-        )}
+      {/* Tab Navigation - Right below header */}
+      <div className="border-b border-zinc-700 bg-zinc-800/50">
+        <div className="flex">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`
+                flex items-center space-x-2 px-6 py-3 text-sm font-medium transition-colors duration-200
+                border-b-2 focus:outline-none flex-1 justify-center
+                ${activeTab === tab.id
+                  ? 'text-blue-400 border-blue-400 bg-zinc-700/50'
+                  : 'text-zinc-400 border-transparent hover:text-zinc-200 hover:bg-zinc-700/30'
+                }
+              `}
+            >
+              {tab.icon}
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'problem' ? (
+        <>
+          {/* Question Header */}
+          <div className="p-6 border-b border-zinc-700 bg-zinc-900">
+            {isRoadmapChallenge && question.step_number && (
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-xs text-zinc-500">Step {question.step_number}</span>
+                <span className="text-xs text-zinc-600">•</span>
+                <span className="text-xs text-blue-400 capitalize">
+                  {roadmapId?.replace('-', ' ')} Challenge
+                </span>
+              </div>
+            )}
         
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xl font-semibold text-zinc-100">
@@ -231,51 +274,28 @@ const QuestionPanel = ({
           </div>
         )}
 
-        {/* Additional roadmap info */}
-        {isRoadmapChallenge && (
-          <div className="mt-4 grid grid-cols-2 gap-4 text-xs">
-            {question.category && (
-              <div>
-                <span className="text-zinc-500">Category:</span>
-                <span className="text-zinc-300 ml-2">{question.category}</span>
-              </div>
-            )}
-            {question.companies && question.companies.length > 0 && (
-              <div>
-                <span className="text-zinc-500">Companies:</span>
-                <span className="text-zinc-300 ml-2">{question.companies.slice(0, 2).join(', ')}{question.companies.length > 2 ? '...' : ''}</span>
+            {/* Additional roadmap info */}
+            {isRoadmapChallenge && (
+              <div className="mt-4 grid grid-cols-2 gap-4 text-xs">
+                {question.category && (
+                  <div>
+                    <span className="text-zinc-500">Category:</span>
+                    <span className="text-zinc-300 ml-2">{question.category}</span>
+                  </div>
+                )}
+                {question.companies && question.companies.length > 0 && (
+                  <div>
+                    <span className="text-zinc-500">Companies:</span>
+                    <span className="text-zinc-300 ml-2">{question.companies.slice(0, 2).join(', ')}{question.companies.length > 2 ? '...' : ''}</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
-        )}
-      </div>
 
-      {/* Tab Navigation */}
-      <div className="border-b border-zinc-700">
-        <div className="flex">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`
-                px-4 py-3 text-sm font-medium transition-colors duration-200
-                border-b-2 focus:outline-none
-                ${activeTab === tab.id
-                  ? 'text-blue-400 border-blue-400 bg-zinc-800/50'
-                  : 'text-zinc-400 border-transparent hover:text-zinc-200 hover:bg-zinc-800/30'
-                }
-              `}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Tab Content */}
-      <div className="flex-1 overflow-y-auto p-6">
-        {activeTab === 'problem' && (
-          <div className="space-y-8">
+          {/* Problem Content */}
+          <div className="flex-1 overflow-y-auto p-6">
+            <div className="space-y-8">
             {/* Description Section */}
             <div className="prose prose-invert max-w-none">
               <div className="text-zinc-300 leading-relaxed space-y-4">
@@ -351,14 +371,13 @@ const QuestionPanel = ({
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </div>
-        )}
-      </div>
 
-      {/* Question Navigation - Only show for non-roadmap challenges */}
-      {!isRoadmapChallenge && availableQuestions && availableQuestions.length > 1 && onQuestionChange && (
+          {/* Question Navigation - Only show for non-roadmap challenges and in Problem tab */}
+          {!isRoadmapChallenge && availableQuestions && availableQuestions.length > 1 && onQuestionChange && (
         <div className="border-t border-zinc-700 p-4">
           <div className="flex items-center justify-between">
             <button
@@ -402,7 +421,21 @@ const QuestionPanel = ({
             </button>
           </div>
         </div>
-      )}
+          )}
+        </>
+      ) : activeTab === 'assistant' ? (
+        <div className="flex-1 overflow-hidden">
+          <AIAssistantChat
+            messages={chatMessages}
+            onSendMessage={onSendMessage}
+            onRequestHint={onRequestHint}
+            isLoadingHint={isLoadingHint}
+            isLoadingChat={isLoadingChat}
+            currentCode={currentCode}
+            questionId={question?.id}
+          />
+        </div>
+      ) : null}
     </div>
   );
 };

@@ -13,6 +13,7 @@ import { sampleQuestions } from '../../data/codingQuestions';
 import useSession from '../../hooks/useSession';
 import { SESSION_TYPES } from '../../constants/sessionConstants';
 import sessionAPI from '../../services/sessionAPI';
+import { requestOrchestratedHint, sendChatMessage } from '../../services/aiAssistantAPI';
 
 /**
  * CodingInterface - LeetCode-like coding interface
@@ -55,6 +56,12 @@ const CodingInterface = ({
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
   const [recoverySessionData, setRecoverySessionData] = useState(null);
   const [isRecovering, setIsRecovering] = useState(false);
+  
+  // AI Assistant state
+  const [chatMessages, setChatMessages] = useState([]);
+  const [currentCode, setCurrentCode] = useState('');
+  const [isLoadingHint, setIsLoadingHint] = useState(false);
+  const [isLoadingChat, setIsLoadingChat] = useState(false);
   
   // Session management
   const {
@@ -384,6 +391,120 @@ const CodingInterface = ({
         console.warn('Failed to track language change event:', error);
       }
     }
+  };
+
+  // AI Assistant Handlers
+  const handleRequestHint = async (hintLevel) => {
+    if (!selectedQuestion) return;
+    
+    setIsLoadingHint(true);
+    
+    try {
+      const result = await requestOrchestratedHint(
+        selectedQuestion.id,
+        currentCode,
+        hintLevel, // Level doesn't matter - backend auto-increments
+        currentSession?.sessionId
+      );
+      
+      if (result.success) {
+        const newMessage = {
+          id: Date.now(),
+          role: 'assistant',
+          content: result.hint,
+          hintLevel: result.hint_level,
+          hintsUsed: result.hints_used,
+          timestamp: new Date().toISOString()
+        };
+        
+        setChatMessages(prev => [...prev, newMessage]);
+      } else {
+        // Show error message
+        const errorMessage = {
+          id: Date.now(),
+          role: 'assistant',
+          content: `❌ ${result.error}`,
+          timestamp: new Date().toISOString()
+        };
+        
+        setChatMessages(prev => [...prev, errorMessage]);
+      }
+    } catch (error) {
+      console.error('Failed to request hint:', error);
+      
+      const errorMessage = {
+        id: Date.now(),
+        role: 'assistant',
+        content: '❌ An unexpected error occurred. Please try again.',
+        timestamp: new Date().toISOString()
+      };
+      
+      setChatMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsLoadingHint(false);
+    }
+  };
+
+  const handleSendChatMessage = async (message) => {
+    if (!message.trim()) return;
+    
+    // Add user message to chat
+    const userMessage = {
+      id: Date.now(),
+      role: 'user',
+      content: message,
+      timestamp: new Date().toISOString()
+    };
+    
+    setChatMessages(prev => [...prev, userMessage]);
+    setIsLoadingChat(true);
+    
+    try {
+      const result = await sendChatMessage(
+        message,
+        selectedQuestion?.id,
+        currentCode,
+        chatMessages
+      );
+      
+      if (result.success) {
+        const assistantMessage = {
+          id: Date.now() + 1,
+          role: 'assistant',
+          content: result.message,
+          timestamp: new Date().toISOString()
+        };
+        
+        setChatMessages(prev => [...prev, assistantMessage]);
+      } else {
+        const errorMessage = {
+          id: Date.now() + 1,
+          role: 'assistant',
+          content: `❌ ${result.error}`,
+          timestamp: new Date().toISOString()
+        };
+        
+        setChatMessages(prev => [...prev, errorMessage]);
+      }
+    } catch (error) {
+      console.error('Failed to send chat message:', error);
+      
+      const errorMessage = {
+        id: Date.now() + 1,
+        role: 'assistant',
+        content: '❌ Failed to send message. Please try again.',
+        timestamp: new Date().toISOString()
+      };
+      
+      setChatMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsLoadingChat(false);
+    }
+  };
+
+  const handleOrbClick = () => {
+    // Request a hint at the default level (Strategic - Level 3)
+    handleRequestHint(3);
   };
 
   // Check if currently in fullscreen using screenfull (utility function)
@@ -982,14 +1103,16 @@ const CodingInterface = ({
         {/* Center Section - AI Assistant */}
         <div className="flex justify-center">
           <div className="relative group">
-            <AIAssistantOrb size="md" isActive={true} />
+            <div onClick={handleOrbClick} className="cursor-pointer">
+              <AIAssistantOrb size="md" isActive={true} />
+            </div>
             {/* Hover Tooltip */}
             <div className="absolute top-full mt-2 left-1/2 transform -translate-x-1/2 px-3 py-2 bg-zinc-700 text-white text-xs rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
               {/* Tooltip Arrow */}
               <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-b-4 border-transparent border-b-zinc-700"></div>
               <div className="text-center">
                 <div className="font-medium text-blue-400">AI Assistant</div>
-                <div className="text-zinc-300 mt-0.5">Ready to help with coding</div>
+                <div className="text-zinc-300 mt-0.5">Click for instant hint • View in AI tab</div>
               </div>
             </div>
           </div>
@@ -1051,6 +1174,13 @@ const CodingInterface = ({
             availableQuestions={roadmapQuestion ? [] : sampleQuestions} // No question list for roadmap challenges
             isRoadmapChallenge={!!roadmapQuestion}
             roadmapId={roadmapId}
+            // AI Assistant props
+            chatMessages={chatMessages}
+            onSendMessage={handleSendChatMessage}
+            onRequestHint={handleRequestHint}
+            isLoadingHint={isLoadingHint}
+            isLoadingChat={isLoadingChat}
+            currentCode={currentCode}
           />
         </div>
 
