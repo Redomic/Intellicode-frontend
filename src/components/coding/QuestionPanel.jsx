@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useImperativeHandle, forwardRef } from 'react';
 import SkeletonLoader from '../ui/SkeletonLoader';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import AIAssistantChat from './AIAssistantChat';
@@ -6,7 +6,7 @@ import AIAssistantChat from './AIAssistantChat';
 /**
  * QuestionPanel - Left panel displaying coding question details and AI Assistant
  */
-const QuestionPanel = ({ 
+const QuestionPanel = forwardRef(({ 
   question, 
   onQuestionChange, 
   availableQuestions, 
@@ -20,8 +20,23 @@ const QuestionPanel = ({
   isLoadingHint = false,
   isLoadingChat = false,
   currentCode = ''
-}) => {
+}, ref) => {
   const [activeTab, setActiveTab] = useState('problem');
+
+  // Expose methods to parent component
+  useImperativeHandle(ref, () => ({
+    switchToAssistantTab: () => {
+      setActiveTab('assistant');
+    }
+  }));
+
+  // Auto-switch to AI Assistant tab when a new hint arrives
+  useEffect(() => {
+    const lastMessage = chatMessages[chatMessages.length - 1];
+    if (lastMessage && lastMessage.hintLevel && lastMessage.role === 'assistant') {
+      setActiveTab('assistant');
+    }
+  }, [chatMessages]);
 
   const getDifficultyColor = (difficulty) => {
     switch (difficulty?.toLowerCase()) {
@@ -438,6 +453,8 @@ const QuestionPanel = ({
       ) : null}
     </div>
   );
-};
+});
+
+QuestionPanel.displayName = 'QuestionPanel';
 
 export default QuestionPanel;

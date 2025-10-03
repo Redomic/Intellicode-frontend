@@ -13,9 +13,7 @@ import axiosInstance from '../utils/axios';
  * @param {string} sessionId - Optional session ID
  * @returns {Promise} - Hint response with adaptive content
  */
-export const requestOrchestrated
-
-Hint = async (questionId, code, hintLevel, sessionId = null) => {
+export const requestOrchestratedHint = async (questionId, code, hintLevel, sessionId = null) => {
   try {
     const payload = {
       question_id: questionId,
@@ -24,14 +22,31 @@ Hint = async (questionId, code, hintLevel, sessionId = null) => {
       session_id: sessionId
     };
 
+    console.log('🔍 DEBUG - Requesting orchestrated hint:', {
+      questionId,
+      codeLength: code ? code.length : 0,
+      hintLevel,
+      sessionId: sessionId || 'NO SESSION ID'
+    });
+
     const response = await axiosInstance.post('/agents/hint-orchestrated', payload);
+    
+    console.log('🔍 DEBUG - Backend response:', {
+      hint_text_length: response.data.hint_text?.length || 0,
+      hint_level: response.data.hint_level,
+      level_name: response.data.level_name,
+      hints_used_total: response.data.hints_used_total,
+      hints_remaining: response.data.hints_remaining,
+      full_data: response.data
+    });
     
     return {
       success: true,
       hint: response.data.hint_text,
-      level: response.data.hint_level,
-      levelName: response.data.level_name,
-      hintsUsed: response.data.hints_used_total
+      hint_level: response.data.hint_level,
+      level_name: response.data.level_name,
+      hints_used: response.data.hints_used_total,
+      hints_remaining: response.data.hints_remaining || 0
     };
   } catch (error) {
     console.error('Failed to request orchestrated hint:', error);
@@ -93,15 +108,17 @@ export const requestSimpleHint = async (questionId, code, hintLevel, sessionId =
  * @param {string} message - User's message
  * @param {string} questionId - Current question ID
  * @param {string} code - Current code
+ * @param {string} sessionId - Current session ID
  * @param {Array} conversationHistory - Previous messages
  * @returns {Promise} - AI response
  */
-export const sendChatMessage = async (message, questionId, code, conversationHistory = []) => {
+export const sendChatMessage = async (message, questionId, code, sessionId, conversationHistory = []) => {
   try {
     const payload = {
       message,
       question_id: questionId,
       code: code || '',
+      session_id: sessionId,
       history: conversationHistory
     };
 
@@ -122,6 +139,29 @@ export const sendChatMessage = async (message, questionId, code, conversationHis
     return {
       success: false,
       error: errorMessage
+    };
+  }
+};
+
+/**
+ * Get chat history for a session
+ * @param {string} sessionId - Session ID
+ * @returns {Promise} - Chat history
+ */
+export const getChatHistory = async (sessionId) => {
+  try {
+    const response = await axiosInstance.get(`/agents/chat/history/${sessionId}`);
+    return {
+      success: true,
+      messages: response.data.messages || [],
+      total: response.data.total || 0
+    };
+  } catch (error) {
+    console.error('Failed to get chat history:', error);
+    return {
+      success: false,
+      messages: [],
+      error: 'Failed to load chat history'
     };
   }
 };
@@ -150,6 +190,7 @@ export default {
   requestOrchestratedHint,
   requestSimpleHint,
   sendChatMessage,
+  getChatHistory,
   checkAgentHealth
 };
 

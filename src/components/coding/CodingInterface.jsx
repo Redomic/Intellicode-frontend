@@ -13,7 +13,7 @@ import { sampleQuestions } from '../../data/codingQuestions';
 import useSession from '../../hooks/useSession';
 import { SESSION_TYPES } from '../../constants/sessionConstants';
 import sessionAPI from '../../services/sessionAPI';
-import { requestOrchestratedHint, sendChatMessage } from '../../services/aiAssistantAPI';
+import { requestOrchestratedHint, sendChatMessage, getChatHistory } from '../../services/aiAssistantAPI';
 
 /**
  * CodingInterface - LeetCode-like coding interface
@@ -62,6 +62,7 @@ const CodingInterface = ({
   const [currentCode, setCurrentCode] = useState('');
   const [isLoadingHint, setIsLoadingHint] = useState(false);
   const [isLoadingChat, setIsLoadingChat] = useState(false);
+  const questionPanelRef = useRef(null);
   
   // Session management
   const {
@@ -395,7 +396,18 @@ const CodingInterface = ({
 
   // AI Assistant Handlers
   const handleRequestHint = async (hintLevel) => {
-    if (!selectedQuestion) return;
+    if (!selectedQuestion) {
+      console.warn('⚠️ No selected question for hint request');
+      return;
+    }
+    
+    console.log('🔍 DEBUG - handleRequestHint called:', {
+      questionId: selectedQuestion.id,
+      hintLevel,
+      sessionId: currentSession?.sessionId || 'NO SESSION',
+      sessionState: currentSession?.state,
+      codeLength: currentCode?.length || 0
+    });
     
     setIsLoadingHint(true);
     
@@ -407,6 +419,14 @@ const CodingInterface = ({
         currentSession?.sessionId
       );
       
+      console.log('🔍 DEBUG - Hint result received:', {
+        success: result.success,
+        hintLength: result.hint?.length || 0,
+        hintLevel: result.hint_level,
+        hintsUsed: result.hints_used,
+        hintsRemaining: result.hints_remaining
+      });
+      
       if (result.success) {
         const newMessage = {
           id: Date.now(),
@@ -416,6 +436,8 @@ const CodingInterface = ({
           hintsUsed: result.hints_used,
           timestamp: new Date().toISOString()
         };
+        
+        console.log('🔍 DEBUG - Adding message to chat:', newMessage);
         
         setChatMessages(prev => [...prev, newMessage]);
       } else {
@@ -448,7 +470,7 @@ const CodingInterface = ({
   const handleSendChatMessage = async (message) => {
     if (!message.trim()) return;
     
-    // Add user message to chat
+    // Add user message to chat immediately (optimistic UI)
     const userMessage = {
       id: Date.now(),
       role: 'user',
@@ -464,6 +486,7 @@ const CodingInterface = ({
         message,
         selectedQuestion?.id,
         currentCode,
+        currentSession?.sessionId,
         chatMessages
       );
       
@@ -472,7 +495,7 @@ const CodingInterface = ({
           id: Date.now() + 1,
           role: 'assistant',
           content: result.message,
-          timestamp: new Date().toISOString()
+          timestamp: result.timestamp || new Date().toISOString()
         };
         
         setChatMessages(prev => [...prev, assistantMessage]);
@@ -503,9 +526,75 @@ const CodingInterface = ({
   };
 
   const handleOrbClick = () => {
-    // Request a hint at the default level (Strategic - Level 3)
+    // Switch to AI Assistant tab immediately
+    if (questionPanelRef.current?.switchToAssistantTab) {
+      questionPanelRef.current.switchToAssistantTab();
+    }
+    // Then request a hint
     handleRequestHint(3);
   };
+
+  // Calculate next hint level and orb color
+  const getNextHintLevelAndColor = () => {
+    // Find the latest hint message
+    const hintMessages = chatMessages.filter(msg => msg.hintLevel);
+    
+    if (hintMessages.length === 0) {
+      // No hints used yet, next will be level 1
+      return { level: 1, color: 'fuchsia' };
+    }
+    
+    const lastHint = hintMessages[hintMessages.length - 1];
+    const hintsUsed = lastHint.hintsUsed || lastHint.hintLevel || 0;
+    
+    // Next hint level (capped at 5)
+    const nextLevel = Math.min(hintsUsed + 1, 5);
+    
+    // Map level to color
+    const colorMap = {
+      1: 'fuchsia',  // Metacognitive
+      2: 'cyan',     // Conceptual
+      3: 'emerald',  // Strategic
+      4: 'amber',    // Structural
+      5: 'rose'      // Targeted
+    };
+    
+    return { level: nextLevel, color: colorMap[nextLevel] || 'blue' };
+  };
+
+  const nextHintInfo = getNextHintLevelAndColor();
+
+  // Load chat history when session is available
+  useEffect(() => {
+    const loadChatHistory = async () => {
+      if (currentSession?.sessionId && currentSession.sessionId !== 'pending') {
+        try {
+          console.log('📜 Loading chat history for session:', currentSession.sessionId);
+          const result = await getChatHistory(currentSession.sessionId);
+          
+          if (result.success && result.messages.length > 0) {
+            // Transform backend messages to frontend format
+            const transformedMessages = result.messages.map((msg, idx) => ({
+              id: idx,
+              role: msg.role,
+              content: msg.content,
+              timestamp: msg.timestamp,
+              hintLevel: msg.metadata?.hint_level,
+              hintsUsed: msg.metadata?.hints_used,
+              metadata: msg.metadata
+            }));
+            
+            setChatMessages(transformedMessages);
+            console.log(`✅ Loaded ${transformedMessages.length} chat messages`);
+          }
+        } catch (error) {
+          console.error('Failed to load chat history:', error);
+        }
+      }
+    };
+
+    loadChatHistory();
+  }, [currentSession?.sessionId]);
 
   // Check if currently in fullscreen using screenfull (utility function)
   const getCurrentFullscreenState = useCallback(() => {
@@ -1104,7 +1193,7 @@ const CodingInterface = ({
         <div className="flex justify-center">
           <div className="relative group">
             <div onClick={handleOrbClick} className="cursor-pointer">
-              <AIAssistantOrb size="md" isActive={true} />
+              <AIAssistantOrb size="md" isActive={true} color={nextHintInfo.color} />
             </div>
             {/* Hover Tooltip */}
             <div className="absolute top-full mt-2 left-1/2 transform -translate-x-1/2 px-3 py-2 bg-zinc-700 text-white text-xs rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
@@ -1112,7 +1201,7 @@ const CodingInterface = ({
               <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-b-4 border-transparent border-b-zinc-700"></div>
               <div className="text-center">
                 <div className="font-medium text-blue-400">AI Assistant</div>
-                <div className="text-zinc-300 mt-0.5">Click for instant hint • View in AI tab</div>
+                <div className="text-zinc-300 mt-0.5">Click for hint level {nextHintInfo.level} • View in AI tab</div>
               </div>
             </div>
           </div>
@@ -1169,6 +1258,7 @@ const CodingInterface = ({
         {/* Question Panel - Left Side */}
         <div className="w-1/2 border-r border-zinc-700 overflow-hidden">
           <QuestionPanel 
+            ref={questionPanelRef}
             question={selectedQuestion}
             onQuestionChange={roadmapQuestion ? null : handleQuestionChange} // Disable question switching for roadmap challenges
             availableQuestions={roadmapQuestion ? [] : sampleQuestions} // No question list for roadmap challenges
@@ -1191,6 +1281,7 @@ const CodingInterface = ({
             language={language}
             onLanguageChange={handleLanguageChange}
             location={location}
+            onCodeChange={setCurrentCode}
           />
         </div>
       </div>
@@ -1213,7 +1304,7 @@ const CodingInterface = ({
       />
 
       {/* Debug info - remove in production */}
-      {process.env.NODE_ENV === 'development' && (
+      {/* {process.env.NODE_ENV === 'development' && (
         <div className="fixed bottom-4 left-4 bg-black/90 text-white text-xs p-3 rounded-lg z-50 max-w-md border border-zinc-600">
           <div className="font-bold text-blue-300 mb-2">🔧 Development Debug Panel</div>
           <div>📊 Session ID: {currentSession?.sessionId || 'None'}</div>
@@ -1224,7 +1315,7 @@ const CodingInterface = ({
           <div>🎯 Question: {selectedQuestion?.title || 'None'}</div>
           <div className="text-green-300 mt-1">✅ Screenfull.js + 3s Safety Check (#{periodicCheckCount})</div>
         </div>
-      )}
+      )} */}
 
     </div>
   );

@@ -4,19 +4,23 @@ import { motion } from 'framer-motion';
 /**
  * AIAssistantOrb - Professional 3D AI Assistant Interface
  * Siri/Cortana-inspired living assistant with organic animations and sophisticated design
+ * Now supports different colors for hint levels!
  * 
  * Usage:
- * <AIAssistantOrb size="lg" isActive={true} />
+ * <AIAssistantOrb size="lg" isActive={true} color="blue" />
  * 
  * Props:
  * - size: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' (default: 'lg')
  * - isActive: boolean - controls animation state (default: true)
  * - className: string - additional CSS classes
+ * - color: 'blue' | 'fuchsia' | 'cyan' | 'emerald' | 'amber' | 'rose' (default: 'blue')
  */
 const AIAssistantOrb = ({ 
   size = 'lg', 
   isActive = true,
-  className = '' 
+  className = '',
+  color = 'blue',
+  onClick
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isClicked, setIsClicked] = useState(false);
@@ -42,6 +46,45 @@ const AIAssistantOrb = ({
     '4xl': 2.5
   };
 
+  // Color palettes for different hint levels
+  const colorPalettes = {
+    blue: {
+      primary: [59, 130, 246],      // blue-500
+      light: [147, 197, 253],        // blue-300
+      accent: [99, 102, 241]         // indigo-500
+    },
+    fuchsia: {
+      primary: [217, 70, 239],       // fuchsia-500
+      light: [240, 171, 252],        // fuchsia-300
+      accent: [168, 85, 247]         // purple-500
+    },
+    cyan: {
+      primary: [6, 182, 212],        // cyan-500
+      light: [103, 232, 249],        // cyan-300
+      accent: [59, 130, 246]         // blue-500
+    },
+    emerald: {
+      primary: [16, 185, 129],       // emerald-500
+      light: [110, 231, 183],        // emerald-300
+      accent: [34, 197, 94]          // green-500
+    },
+    amber: {
+      primary: [245, 158, 11],       // amber-500
+      light: [252, 211, 77],         // amber-300
+      accent: [249, 115, 22]         // orange-500
+    },
+    rose: {
+      primary: [244, 63, 94],        // rose-500
+      light: [253, 164, 175],        // rose-300
+      accent: [239, 68, 68]          // red-500
+    }
+  };
+
+  const currentPalette = colorPalettes[color] || colorPalettes.blue;
+  const [r, g, b] = currentPalette.primary;
+  const [lr, lg, lb] = currentPalette.light;
+  const [ar, ag, ab] = currentPalette.accent;
+
   const containerSize = sizeClasses[size] || sizeClasses.lg;
   const scaleFactor = scaleFactors[size] || scaleFactors.lg;
 
@@ -56,6 +99,7 @@ const AIAssistantOrb = ({
   const handleClick = () => {
     setIsClicked(true);
     setTimeout(() => setIsClicked(false), 200);
+    if (onClick) onClick();
   };
 
   return (
@@ -82,8 +126,8 @@ const AIAssistantOrb = ({
         style={{
           inset: `${-6 * scaleFactor}px`,
           background: isHovered 
-            ? 'radial-gradient(circle, rgba(59, 130, 246, 0.25) 0%, rgba(161, 161, 170, 0.1) 50%, transparent 70%)'
-            : 'radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, rgba(161, 161, 170, 0.05) 50%, transparent 70%)',
+            ? `radial-gradient(circle, rgba(${r}, ${g}, ${b}, 0.25) 0%, rgba(161, 161, 170, 0.1) 50%, transparent 70%)`
+            : `radial-gradient(circle, rgba(${r}, ${g}, ${b}, 0.15) 0%, rgba(161, 161, 170, 0.05) 50%, transparent 70%)`,
           filter: `blur(${8 * scaleFactor}px)`,
         }}
         animate={isActive ? {
@@ -106,12 +150,12 @@ const AIAssistantOrb = ({
             background: `
               conic-gradient(from ${layer.id * 72}deg,
                 transparent 0deg,
-                rgba(59, 130, 246, ${isHovered ? 0.3 - layer.id * 0.04 : 0.2 - layer.id * 0.03}) 60deg,
-                rgba(147, 197, 253, ${isHovered ? 0.25 - layer.id * 0.03 : 0.15 - layer.id * 0.02}) 120deg,
+                rgba(${r}, ${g}, ${b}, ${isHovered ? 0.3 - layer.id * 0.04 : 0.2 - layer.id * 0.03}) 60deg,
+                rgba(${lr}, ${lg}, ${lb}, ${isHovered ? 0.25 - layer.id * 0.03 : 0.15 - layer.id * 0.02}) 120deg,
                 rgba(161, 161, 170, ${isHovered ? 0.2 : 0.1}) 150deg,
                 transparent 180deg,
-                rgba(59, 130, 246, ${isHovered ? 0.3 - layer.id * 0.04 : 0.2 - layer.id * 0.03}) 240deg,
-                rgba(147, 197, 253, ${isHovered ? 0.25 - layer.id * 0.03 : 0.15 - layer.id * 0.02}) 300deg,
+                rgba(${r}, ${g}, ${b}, ${isHovered ? 0.3 - layer.id * 0.04 : 0.2 - layer.id * 0.03}) 240deg,
+                rgba(${lr}, ${lg}, ${lb}, ${isHovered ? 0.25 - layer.id * 0.03 : 0.15 - layer.id * 0.02}) 300deg,
                 transparent 360deg
               )
             `,
@@ -144,16 +188,16 @@ const AIAssistantOrb = ({
           className="absolute rounded-full border"
           style={{
             inset: `${(ring * 4 + 4) * scaleFactor}px`,
-            borderColor: `rgba(59, 130, 246, ${0.3 - ring * 0.08})`,
+            borderColor: `rgba(${r}, ${g}, ${b}, ${0.3 - ring * 0.08})`,
             borderWidth: `${scaleFactor}px`,
           }}
           animate={isActive ? {
             scale: [1, 1.05, 1],
             opacity: [0.4, 0.7, 0.4],
             borderColor: [
-              `rgba(59, 130, 246, ${0.3 - ring * 0.08})`,
-              `rgba(147, 197, 253, ${0.5 - ring * 0.1})`,
-              `rgba(59, 130, 246, ${0.3 - ring * 0.08})`
+              `rgba(${r}, ${g}, ${b}, ${0.3 - ring * 0.08})`,
+              `rgba(${lr}, ${lg}, ${lb}, ${0.5 - ring * 0.1})`,
+              `rgba(${r}, ${g}, ${b}, ${0.3 - ring * 0.08})`
             ]
           } : { opacity: 0.2 }}
           transition={{
@@ -173,52 +217,52 @@ const AIAssistantOrb = ({
           background: isHovered 
             ? `
               radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 1) 0%, transparent 40%),
-              radial-gradient(circle at 70% 70%, rgba(147, 197, 253, 0.8) 0%, transparent 50%),
+              radial-gradient(circle at 70% 70%, rgba(${lr}, ${lg}, ${lb}, 0.8) 0%, transparent 50%),
               radial-gradient(circle at 50% 50%, rgba(161, 161, 170, 0.3) 20%, transparent 60%),
               linear-gradient(45deg, 
-                rgba(59, 130, 246, 0.9) 0%,
-                rgba(99, 102, 241, 1) 50%,
-                rgba(59, 130, 246, 0.9) 100%
+                rgba(${r}, ${g}, ${b}, 0.9) 0%,
+                rgba(${ar}, ${ag}, ${ab}, 1) 50%,
+                rgba(${r}, ${g}, ${b}, 0.9) 100%
               )
             `
             : `
               radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.9) 0%, transparent 50%),
-              radial-gradient(circle at 70% 70%, rgba(147, 197, 253, 0.6) 0%, transparent 60%),
+              radial-gradient(circle at 70% 70%, rgba(${lr}, ${lg}, ${lb}, 0.6) 0%, transparent 60%),
               radial-gradient(circle at 50% 50%, rgba(161, 161, 170, 0.15) 30%, transparent 70%),
               linear-gradient(45deg, 
-                rgba(59, 130, 246, 0.8) 0%,
-                rgba(99, 102, 241, 0.9) 50%,
-                rgba(59, 130, 246, 0.8) 100%
+                rgba(${r}, ${g}, ${b}, 0.8) 0%,
+                rgba(${ar}, ${ag}, ${ab}, 0.9) 50%,
+                rgba(${r}, ${g}, ${b}, 0.8) 100%
               )
             `,
           boxShadow: isHovered 
             ? `
               inset 0 0 ${20 * scaleFactor}px rgba(255, 255, 255, 0.5),
-              inset 0 0 ${30 * scaleFactor}px rgba(59, 130, 246, 0.6),
-              0 0 ${35 * scaleFactor}px rgba(59, 130, 246, 0.5),
-              0 0 ${50 * scaleFactor}px rgba(99, 102, 241, 0.3)
+              inset 0 0 ${30 * scaleFactor}px rgba(${r}, ${g}, ${b}, 0.6),
+              0 0 ${35 * scaleFactor}px rgba(${r}, ${g}, ${b}, 0.5),
+              0 0 ${50 * scaleFactor}px rgba(${ar}, ${ag}, ${ab}, 0.3)
             `
             : `
               inset 0 0 ${15 * scaleFactor}px rgba(255, 255, 255, 0.3),
-              inset 0 0 ${25 * scaleFactor}px rgba(59, 130, 246, 0.4),
-              0 0 ${25 * scaleFactor}px rgba(59, 130, 246, 0.3),
-              0 0 ${40 * scaleFactor}px rgba(99, 102, 241, 0.2)
+              inset 0 0 ${25 * scaleFactor}px rgba(${r}, ${g}, ${b}, 0.4),
+              0 0 ${25 * scaleFactor}px rgba(${r}, ${g}, ${b}, 0.3),
+              0 0 ${40 * scaleFactor}px rgba(${ar}, ${ag}, ${ab}, 0.2)
             `
         }}
         animate={isActive ? {
           scale: isHovered ? [1, 1.12, 1] : [1, 1.08, 1],
           boxShadow: isClicked ? [
-            `inset 0 0 ${25 * scaleFactor}px rgba(255, 255, 255, 0.7), 0 0 ${45 * scaleFactor}px rgba(59, 130, 246, 0.7)`,
-            `inset 0 0 ${30 * scaleFactor}px rgba(255, 255, 255, 0.9), 0 0 ${55 * scaleFactor}px rgba(59, 130, 246, 0.9)`,
-            `inset 0 0 ${25 * scaleFactor}px rgba(255, 255, 255, 0.7), 0 0 ${45 * scaleFactor}px rgba(59, 130, 246, 0.7)`
+            `inset 0 0 ${25 * scaleFactor}px rgba(255, 255, 255, 0.7), 0 0 ${45 * scaleFactor}px rgba(${r}, ${g}, ${b}, 0.7)`,
+            `inset 0 0 ${30 * scaleFactor}px rgba(255, 255, 255, 0.9), 0 0 ${55 * scaleFactor}px rgba(${r}, ${g}, ${b}, 0.9)`,
+            `inset 0 0 ${25 * scaleFactor}px rgba(255, 255, 255, 0.7), 0 0 ${45 * scaleFactor}px rgba(${r}, ${g}, ${b}, 0.7)`
           ] : isHovered ? [
-            `inset 0 0 ${20 * scaleFactor}px rgba(255, 255, 255, 0.5), 0 0 ${35 * scaleFactor}px rgba(59, 130, 246, 0.5)`,
-            `inset 0 0 ${25 * scaleFactor}px rgba(255, 255, 255, 0.7), 0 0 ${45 * scaleFactor}px rgba(59, 130, 246, 0.7)`,
-            `inset 0 0 ${20 * scaleFactor}px rgba(255, 255, 255, 0.5), 0 0 ${35 * scaleFactor}px rgba(59, 130, 246, 0.5)`
+            `inset 0 0 ${20 * scaleFactor}px rgba(255, 255, 255, 0.5), 0 0 ${35 * scaleFactor}px rgba(${r}, ${g}, ${b}, 0.5)`,
+            `inset 0 0 ${25 * scaleFactor}px rgba(255, 255, 255, 0.7), 0 0 ${45 * scaleFactor}px rgba(${r}, ${g}, ${b}, 0.7)`,
+            `inset 0 0 ${20 * scaleFactor}px rgba(255, 255, 255, 0.5), 0 0 ${35 * scaleFactor}px rgba(${r}, ${g}, ${b}, 0.5)`
           ] : [
-            `inset 0 0 ${15 * scaleFactor}px rgba(255, 255, 255, 0.3), 0 0 ${25 * scaleFactor}px rgba(59, 130, 246, 0.3)`,
-            `inset 0 0 ${20 * scaleFactor}px rgba(255, 255, 255, 0.5), 0 0 ${35 * scaleFactor}px rgba(59, 130, 246, 0.5)`,
-            `inset 0 0 ${15 * scaleFactor}px rgba(255, 255, 255, 0.3), 0 0 ${25 * scaleFactor}px rgba(59, 130, 246, 0.3)`
+            `inset 0 0 ${15 * scaleFactor}px rgba(255, 255, 255, 0.3), 0 0 ${25 * scaleFactor}px rgba(${r}, ${g}, ${b}, 0.3)`,
+            `inset 0 0 ${20 * scaleFactor}px rgba(255, 255, 255, 0.5), 0 0 ${35 * scaleFactor}px rgba(${r}, ${g}, ${b}, 0.5)`,
+            `inset 0 0 ${15 * scaleFactor}px rgba(255, 255, 255, 0.3), 0 0 ${25 * scaleFactor}px rgba(${r}, ${g}, ${b}, 0.3)`
           ],
         } : { 
           scale: 0.9,
@@ -239,8 +283,8 @@ const AIAssistantOrb = ({
           background: `
             radial-gradient(circle at 40% 40%, rgba(255, 255, 255, 1) 0%, transparent 60%),
             radial-gradient(circle, 
-              rgba(147, 197, 253, 0.9) 0%,
-              rgba(59, 130, 246, 0.6) 60%,
+              rgba(${lr}, ${lg}, ${lb}, 0.9) 0%,
+              rgba(${r}, ${g}, ${b}, 0.6) 60%,
               transparent 80%
             )
           `,
@@ -262,7 +306,10 @@ const AIAssistantOrb = ({
           {[0, 1, 2, 3].map((i) => (
             <motion.div
               key={`pulse-${i}`}
-              className="absolute inset-0 rounded-full border border-blue-400/20"
+              className="absolute inset-0 rounded-full border"
+              style={{
+                borderColor: `rgba(${r}, ${g}, ${b}, 0.2)`
+              }}
               animate={{
                 scale: [1, 2],
                 opacity: [0.5, 0],
@@ -287,11 +334,11 @@ const AIAssistantOrb = ({
               background: `
                 conic-gradient(from 0deg,
                   transparent 0deg,
-                  rgba(59, 130, 246, 0.2) 30deg,
+                  rgba(${r}, ${g}, ${b}, 0.2) 30deg,
                   transparent 90deg,
-                  rgba(147, 197, 253, 0.15) 150deg,
+                  rgba(${lr}, ${lg}, ${lb}, 0.15) 150deg,
                   transparent 210deg,
-                  rgba(59, 130, 246, 0.2) 270deg,
+                  rgba(${r}, ${g}, ${b}, 0.2) 270deg,
                   transparent 360deg
                 )
               `,
@@ -316,12 +363,13 @@ const AIAssistantOrb = ({
           {[...Array(isHovered ? 10 : 6)].map((_, i) => (
             <motion.div
               key={`particle-${i}`}
-              className="absolute bg-blue-300 rounded-full"
+              className="absolute rounded-full"
               style={{ 
                 width: `${2 * scaleFactor}px`,
                 height: `${2 * scaleFactor}px`,
                 top: `${30 + Math.random() * 40}%`, 
-                left: `${30 + Math.random() * 40}%` 
+                left: `${30 + Math.random() * 40}%`,
+                backgroundColor: `rgba(${lr}, ${lg}, ${lb}, 1)`
               }}
               animate={{
                 opacity: [0, 1, 0],

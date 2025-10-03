@@ -19,7 +19,8 @@ const CodeEditor = ({
   question, 
   language, 
   onLanguageChange,
-  location
+  location,
+  onCodeChange
 }) => {
   const [code, setCode] = useState('');
   const [output, setOutput] = useState('');
@@ -438,7 +439,13 @@ const CodeEditor = ({
 
   // Handle code change from Monaco Editor
   const handleEditorChange = (value) => {
-    setCode(value || '');
+    const newCode = value || '';
+    setCode(newCode);
+    
+    // Notify parent component of code change
+    if (onCodeChange) {
+      onCodeChange(newCode);
+    }
   };
 
   // Format code
