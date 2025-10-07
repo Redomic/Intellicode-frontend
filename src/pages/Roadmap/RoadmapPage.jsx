@@ -277,7 +277,7 @@ const RoadmapPage = () => {
                 const isCurrent = !isCompleted && isUnlocked && index === Math.min(...Array.from(unlockedLevels)) - 1;
                 
                 return (
-                  <div key={question.step_number} className="relative">
+                  <div key={question._key || question.key || question.question_id} className="relative">
                     {/* Connection to path */}
                     <div 
                       className={`absolute left-1/2 top-8 transform -translate-x-1/2 w-1 h-4 z-0

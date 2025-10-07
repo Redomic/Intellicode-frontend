@@ -11,6 +11,7 @@ import SubmissionSuccessModal from './SubmissionSuccessModal';
 import { LoadingButton } from '../ui/InlineLoading';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import { useNavigate } from 'react-router-dom';
+import axiosInstance from '../../utils/axios';
 
 /**
  * CodeEditor - Right panel with code editor and execution controls
@@ -615,6 +616,25 @@ const CodeEditor = ({
           await trackCodeChange(code, language);
         } catch (error) {
           console.warn('Failed to save code snapshot:', error);
+        }
+      }
+      
+      // Save last run state to session
+      if (currentSession?.sessionId) {
+        try {
+          await axiosInstance.post(`/sessions/${currentSession.sessionId}/last-run`, {
+            code,
+            language,
+            status: result.status,
+            passed_count: result.passed_count,
+            total_count: result.total_count,
+            runtime_ms: result.runtime_ms,
+            error_message: result.error_message,
+            test_results: result.test_results
+          });
+          console.log('💾 Saved last run state to session');
+        } catch (error) {
+          console.warn('Failed to save last run state:', error);
         }
       }
       
