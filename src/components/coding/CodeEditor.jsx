@@ -21,7 +21,8 @@ const CodeEditor = ({
   language, 
   onLanguageChange,
   location,
-  onCodeChange
+  onCodeChange,
+  latestHint = null  // New prop: latest hint for code highlighting
 }) => {
   const [code, setCode] = useState('');
   const [output, setOutput] = useState('');
@@ -39,6 +40,7 @@ const CodeEditor = ({
   const [successModalData, setSuccessModalData] = useState(null);
   const editorRef = useRef(null);
   const monacoRef = useRef(null);
+  const decorationsRef = useRef([]);  // Track Monaco decorations for highlights
   const navigate = useNavigate();
   
   // API hooks
@@ -88,6 +90,153 @@ const CodeEditor = ({
       java: question?.javaTemplate || `class Solution {\n    public ${question?.functionSignature?.java || 'int[] solution(int[] nums)'} {\n        // Write your code here\n        \n    }\n\n    public static void main(String[] args) {\n        Solution sol = new Solution();\n        // Add test cases here\n    }\n}`
     };
     return templates[lang] || '';
+  };
+
+  // Extract code snippets from hint text (backticks and triple backticks)
+  const extractCodeSnippets = (hintText) => {
+    if (!hintText) return [];
+    
+    const snippets = [];
+    
+    // Extract triple backtick code blocks - split into individual lines
+    const blockRegex = /```(?:python|java|javascript|cpp|c)?\s*\n([\s\S]*?)```/g;
+    let match;
+    while ((match = blockRegex.exec(hintText)) !== null) {
+      if (match[1]?.trim()) {
+        // Split multi-line blocks into individual lines for better matching
+        const lines = match[1].split('\n').map(l => l.trim()).filter(l => l.length > 3 && !l.startsWith('#'));
+        snippets.push(...lines);
+      }
+    }
+    
+    // Extract inline code (single backticks) - ONLY what's inside backticks
+    // Match backtick, then content, then closing backtick
+    const inlineRegex = /`([^`\n]+?)`/g;
+    while ((match = inlineRegex.exec(hintText)) !== null) {
+      const snippet = match[1].trim();
+      
+      // Skip numbers, single characters, and plain English
+      if (snippet.length < 2 || /^\d+\.?\d*$/.test(snippet)) continue;
+      
+      // Only include if it looks like code (has operators, parentheses, keywords, etc.)
+      if (/[()=<>{}[\]]|return|if|def|class|for|while|max_of_left|min_of_right|m \+|n \+/.test(snippet)) {
+        snippets.push(snippet);
+      }
+    }
+    
+    // Extract "line N" or "line where you X" references
+    const lineRefRegex = /\b(?:line|Line)\s+(?:where you\s+)?(?:(\d+)|`([^`]+)`)/g;
+    while ((match = lineRefRegex.exec(hintText)) !== null) {
+      if (match[1]) {
+        snippets.push(`line ${match[1]}`);
+      } else if (match[2]) {
+        snippets.push(match[2].trim());
+      }
+    }
+    
+    console.log('🎨 Extracted snippets:', snippets);
+    return snippets;
+  };
+
+  // Find matching lines in code for a snippet
+  const findMatchingLines = (codeText, snippet) => {
+    if (!codeText || !snippet) return [];
+    
+    const codeLines = codeText.split('\n');
+    const matches = [];
+    
+    // Clean up snippet for matching (remove extra whitespace, normalize)
+    const cleanSnippet = snippet
+      .replace(/\s+/g, ' ')
+      .replace(/["""]/g, '"')  // Normalize quotes
+      .replace(/[''']/g, "'")
+      .trim();
+    
+    // Skip if snippet is too short or just whitespace/comments
+    if (cleanSnippet.length < 3) return [];
+    
+    codeLines.forEach((line, index) => {
+      const cleanLine = line
+        .replace(/\s+/g, ' ')
+        .replace(/["""]/g, '"')
+        .replace(/[''']/g, "'")
+        .trim();
+      
+      // Skip empty lines or pure comments
+      if (!cleanLine || cleanLine.startsWith('#') || cleanLine.startsWith('//')) {
+        return;
+      }
+      
+      // Check if line contains the snippet (need substantial overlap)
+      const lineContainsSnippet = cleanLine.includes(cleanSnippet);
+      const snippetContainsLine = cleanSnippet.includes(cleanLine) && cleanLine.length >= 5;
+      
+      // For line numbers like "line 30", extract and match
+      const lineNumMatch = snippet.match(/line\s+(\d+)/i);
+      if (lineNumMatch) {
+        const targetLine = parseInt(lineNumMatch[1]);
+        if (targetLine === index + 1) {
+          matches.push(index + 1);
+          return;
+        }
+      }
+      
+      if (lineContainsSnippet || snippetContainsLine) {
+        matches.push(index + 1);  // Monaco uses 1-based line numbers
+      }
+    });
+    
+    return matches;
+  };
+
+  // Clear all code highlights
+  const clearHighlights = () => {
+    if (editorRef.current && decorationsRef.current.length > 0) {
+      decorationsRef.current = editorRef.current.deltaDecorations(decorationsRef.current, []);
+      console.log('🎨 Cleared code highlights');
+    }
+  };
+
+  // Highlight lines in Monaco editor
+  const highlightCodeLines = (snippets) => {
+    if (!editorRef.current || !monacoRef.current || !code) return;
+    
+    console.log('🎨 Highlighting code from hint:', { snippetsCount: snippets.length });
+    
+    // Clear previous decorations
+    clearHighlights();
+    
+    // Find all lines to highlight
+    const linesToHighlight = new Set();
+    snippets.forEach(snippet => {
+      const matches = findMatchingLines(code, snippet);
+      matches.forEach(lineNum => linesToHighlight.add(lineNum));
+    });
+    
+    console.log('🎨 Lines to highlight:', Array.from(linesToHighlight));
+    
+    if (linesToHighlight.size === 0) return;
+    
+    // Create decorations for highlighted lines
+    const decorations = Array.from(linesToHighlight).map(lineNumber => ({
+      range: new monacoRef.current.Range(lineNumber, 1, lineNumber, 1),
+      options: {
+        isWholeLine: true,
+        className: 'highlighted-code-line',
+        glyphMarginClassName: 'highlighted-glyph-margin'
+      }
+    }));
+    
+    // Apply decorations (persistent until cleared)
+    decorationsRef.current = editorRef.current.deltaDecorations([], decorations);
+    
+    // Scroll to first highlighted line
+    if (linesToHighlight.size > 0) {
+      const firstLine = Math.min(...Array.from(linesToHighlight));
+      editorRef.current.revealLineInCenter(firstLine);
+    }
+    
+    console.log('🎨 Highlights will persist until code changes or new hint arrives');
   };
 
   // Monaco Editor configuration
@@ -519,6 +668,12 @@ const CodeEditor = ({
       setOutput('');
       setCodeInitialized(true);
       
+      // Notify parent component of initial code
+      if (onCodeChange && codeToSet) {
+        onCodeChange(codeToSet);
+        console.log('📤 Notified parent of initial code:', codeToSet.length, 'chars');
+      }
+      
       // Show restoration message if code was restored
       if (shouldRestoreFromSession && codeToSet.trim() !== getLanguageTemplate(language, question).trim()) {
         console.log('✅ Code successfully restored from previous session');
@@ -558,6 +713,33 @@ const CodeEditor = ({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showSettingsDropdown]);
+
+  // Highlight code when new hint arrives
+  useEffect(() => {
+    if (!latestHint || !code || !editorRef.current) return;
+    
+    console.log('🎨 New hint received, analyzing for code references...');
+    
+    // Small delay to ensure editor is ready
+    setTimeout(() => {
+      const snippets = extractCodeSnippets(latestHint);
+      if (snippets.length > 0) {
+        console.log('🎨 Found code snippets in hint:', snippets);
+        highlightCodeLines(snippets);
+      } else {
+        console.log('🎨 No code snippets found in hint');
+      }
+    }, 100);
+  }, [latestHint]);
+
+  // Clear highlights when code changes (user is editing)
+  useEffect(() => {
+    // Only clear if user is actively editing (not on initial load)
+    if (codeInitialized && decorationsRef.current.length > 0) {
+      console.log('🎨 Code changed, clearing highlights...');
+      clearHighlights();
+    }
+  }, [code, codeInitialized]);
 
   // Code snapshots are now only saved on Run or Submit actions (removed auto-save)
   // This reduces unnecessary database operations and API calls

@@ -3,17 +3,21 @@ import axiosInstance from '../utils/axios';
 /**
  * AI Assistant API Service
  * Handles communication with the AI Agent backend endpoints
+ * 
+ * NOTE: All AI operations (hint generation, chat) use a 120-second timeout by default
+ * to accommodate LLM processing time. This can be overridden by passing a custom timeout parameter.
  */
 
 /**
- * Request an adaptive pedagogical hint from the orchestrator
+ * Request an adaptive pedagogical hint (uses full ITS orchestrator)
  * @param {string} questionId - The question/problem ID
  * @param {string} code - Current user code
- * @param {number} hintLevel - Hint level (1-5)
+ * @param {number} hintLevel - Hint level (1-5) - auto-calculated by backend
  * @param {string} sessionId - Optional session ID
+ * @param {number} timeout - Request timeout in ms (default: 120000 = 2 minutes)
  * @returns {Promise} - Hint response with adaptive content
  */
-export const requestOrchestratedHint = async (questionId, code, hintLevel, sessionId = null) => {
+export const requestOrchestratedHint = async (questionId, code, hintLevel, sessionId = null, timeout = 120000) => {
   try {
     const payload = {
       question_id: questionId,
@@ -26,10 +30,11 @@ export const requestOrchestratedHint = async (questionId, code, hintLevel, sessi
       questionId,
       codeLength: code ? code.length : 0,
       hintLevel,
-      sessionId: sessionId || 'NO SESSION ID'
+      sessionId: sessionId || 'NO SESSION ID',
+      timeout: `${timeout / 1000}s`
     });
 
-    const response = await axiosInstance.post('/agents/hint-orchestrated', payload);
+    const response = await axiosInstance.post('/agents/hint', payload, { timeout });
     
     console.log('🔍 DEBUG - Backend response:', {
       hint_text_length: response.data.hint_text?.length || 0,
@@ -69,9 +74,10 @@ export const requestOrchestratedHint = async (questionId, code, hintLevel, sessi
  * @param {string} code - Current user code
  * @param {number} hintLevel - Hint level (1-5)
  * @param {string} sessionId - Optional session ID
+ * @param {number} timeout - Request timeout in ms (default: 120000 = 2 minutes)
  * @returns {Promise} - Hint response
  */
-export const requestSimpleHint = async (questionId, code, hintLevel, sessionId = null) => {
+export const requestSimpleHint = async (questionId, code, hintLevel, sessionId = null, timeout = 120000) => {
   try {
     const payload = {
       question_id: questionId,
@@ -80,7 +86,7 @@ export const requestSimpleHint = async (questionId, code, hintLevel, sessionId =
       session_id: sessionId
     };
 
-    const response = await axiosInstance.post('/agents/hint', payload);
+    const response = await axiosInstance.post('/agents/hint', payload, { timeout });
     
     return {
       success: true,
@@ -110,9 +116,10 @@ export const requestSimpleHint = async (questionId, code, hintLevel, sessionId =
  * @param {string} code - Current code
  * @param {string} sessionId - Current session ID
  * @param {Array} conversationHistory - Previous messages
+ * @param {number} timeout - Request timeout in ms (default: 120000 = 2 minutes)
  * @returns {Promise} - AI response
  */
-export const sendChatMessage = async (message, questionId, code, sessionId, conversationHistory = []) => {
+export const sendChatMessage = async (message, questionId, code, sessionId, conversationHistory = [], timeout = 120000) => {
   try {
     const payload = {
       message,
@@ -122,7 +129,7 @@ export const sendChatMessage = async (message, questionId, code, sessionId, conv
       history: conversationHistory
     };
 
-    const response = await axiosInstance.post('/agents/chat', payload);
+    const response = await axiosInstance.post('/agents/chat', payload, { timeout });
     
     return {
       success: true,

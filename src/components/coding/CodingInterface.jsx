@@ -1282,6 +1282,7 @@ const CodingInterface = ({
             onLanguageChange={handleLanguageChange}
             location={location}
             onCodeChange={setCurrentCode}
+            latestHint={chatMessages.filter(m => m.hintLevel).slice(-1)[0]?.content}
           />
         </div>
       </div>

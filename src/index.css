@@ -140,3 +140,24 @@ button:active {
 .bg-zinc-750 {
   background-color: #323238;
 }
+
+/* Monaco Editor - Code highlighting from AI hints */
+.highlighted-code-line {
+  background-color: rgba(168, 85, 247, 0.15) !important; /* Purple-500 with low opacity */
+  border-left: 3px solid rgb(168, 85, 247) !important; /* Solid purple left border */
+  animation: highlightPulse 2s ease-in-out;
+}
+
+.highlighted-glyph-margin {
+  background-color: rgb(168, 85, 247) !important;
+  width: 4px !important;
+}
+
+@keyframes highlightPulse {
+  0%, 100% {
+    background-color: rgba(168, 85, 247, 0.15);
+  }
+  50% {
+    background-color: rgba(168, 85, 247, 0.3);
+  }
+}

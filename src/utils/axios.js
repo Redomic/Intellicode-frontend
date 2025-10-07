@@ -3,7 +3,7 @@ import axios from 'axios';
 // Create axios instance with default config
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
-  timeout: 60000, // Increased to 60 seconds for AI operations (hint generation, chat)
+  timeout: 60000, // Default: 60 seconds (AI operations override this with 120s)
   headers: {
     'Content-Type': 'application/json',
   },
