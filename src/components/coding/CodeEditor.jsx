@@ -784,7 +784,9 @@ const CodeEditor = ({
         code: code,
         language: language,
         test_cases: testCases,
-        question_id: question.id
+        question_id: question.id,
+        question_title: question.title,
+        problem_statement: question.description || question.problem_statement_text || question.problem_statement || ''
       };
 
       const result = await runCodeHook.execute(runData);
@@ -1457,6 +1459,7 @@ const CodeEditor = ({
             <SubmissionResult 
               result={submissionResult} 
               isRunning={isRunning || runningTestIndex !== null}
+              questionId={question?.id}
             />
               </div>
             )}

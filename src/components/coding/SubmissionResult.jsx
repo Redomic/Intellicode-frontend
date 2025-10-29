@@ -1,11 +1,63 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import OptimizationTips from './OptimizationTips';
+import axiosInstance from '../../utils/axios';
 
 /**
  * Professional submission result display component
  * Shows test results, performance metrics, and status in a clean, modern UI
+ * Now includes code quality suggestions from Code Analysis Agent (fetched asynchronously)
  */
-const SubmissionResult = ({ result, isRunning }) => {
+const SubmissionResult = ({ result, isRunning, questionId }) => {
+  const [codeAnalysis, setCodeAnalysis] = useState(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisFailed, setAnalysisFailed] = useState(false);
+  // Poll for code analysis when result indicates analysis is pending
+  useEffect(() => {
+    if (result?.analysis_pending && result.success && questionId) {
+      setAnalysisLoading(true);
+      setAnalysisFailed(false);
+      
+      // Poll for analysis (with exponential backoff)
+      let attempts = 0;
+      const maxAttempts = 10; // Max 10 attempts (about 30 seconds total)
+      
+      const pollAnalysis = async () => {
+        try {
+          const response = await axiosInstance.get(`/submissions/analysis/${questionId}`);
+          
+          if (response.data.success && response.data.analysis) {
+            setCodeAnalysis(response.data.analysis);
+            setAnalysisLoading(false);
+            console.log('✅ Code analysis fetched successfully');
+          }
+        } catch (error) {
+          attempts++;
+          
+          if (attempts >= maxAttempts) {
+            console.warn('⚠️ Max polling attempts reached for code analysis');
+            setAnalysisLoading(false);
+            setAnalysisFailed(true);
+            return;
+          }
+          
+          // If 404, analysis isn't ready yet - retry with exponential backoff
+          if (error.response?.status === 404) {
+            const delay = Math.min(1000 * Math.pow(1.5, attempts), 5000); // Cap at 5s
+            setTimeout(pollAnalysis, delay);
+          } else {
+            console.error('Failed to fetch code analysis:', error);
+            setAnalysisLoading(false);
+            setAnalysisFailed(true);
+          }
+        }
+      };
+      
+      // Start polling after a short delay (give backend time to start)
+      setTimeout(pollAnalysis, 1500);
+    }
+  }, [result?.analysis_pending, result?.success, questionId]);
+
   if (isRunning) {
     return (
       <div className="h-full flex items-center justify-center bg-zinc-900">
@@ -165,6 +217,51 @@ const SubmissionResult = ({ result, isRunning }) => {
           </div>
         )}
 
+        {/* Code Analysis / Optimization Tips */}
+        {isSuccess && (
+          <>
+            {/* Show loading state while analysis is being generated */}
+            {analysisLoading && !codeAnalysis && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-blue-500/5 rounded-lg border border-blue-500/20 p-6 mb-6"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="flex-shrink-0">
+                    <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center">
+                      <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-blue-400 mb-1">
+                      Analyzing Your Code...
+                    </h3>
+                    <p className="text-zinc-400 text-xs">
+                      AI is reviewing your solution for optimization opportunities
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+            
+            {/* Show analysis when available */}
+            {codeAnalysis && <OptimizationTips analysisData={codeAnalysis} />}
+            
+            {/* Show failure state if analysis failed */}
+            {analysisFailed && !codeAnalysis && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-zinc-800/50 rounded-lg border border-zinc-700 p-4 mb-6"
+              >
+                <p className="text-zinc-500 text-sm">
+                  💡 Code analysis is temporarily unavailable. Your code passed all tests!
+                </p>
+              </motion.div>
+            )}
+          </>
+        )}
 
         {/* Test Results */}
         {result.test_results && result.test_results.length > 0 && (
