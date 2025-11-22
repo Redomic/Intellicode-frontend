@@ -171,7 +171,7 @@ const ProgressHeader = ({ totalLevels, completedLevels, courseName }) => {
               <span className="font-bold">Achievement Unlocked!</span>
             </div>
             <p className="text-sm text-purple-200">
-              Quarter Master - You've completed 25% of the course! 🎉
+              Quarter Master - You've completed 25% of the course!
             </p>
           </motion.div>
         )}

@@ -192,7 +192,7 @@ const OptimizationTips = ({ analysisData }) => {
             </div>
             <div className="flex-1">
               <h3 className="text-lg font-bold text-emerald-400 tracking-tight">
-                Already Optimized! 🎉
+                Already Optimized!
               </h3>
               {proficiency_level && (
                 <p className="text-xs text-zinc-500 mt-0.5">
