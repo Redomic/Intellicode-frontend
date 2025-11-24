@@ -1,9 +1,30 @@
-# IntelliCode Frontend
+<h1 align="center">
+  IntelliCode - Multi-Agent LLM Intelligent Teaching System
+</h1>
+<h3 align="center">
+  A Principled Architecture with Centralized Learner Modeling
+</h3>
+
+<div align="center">
+  <p style="margin:3px 0;">
+    <b>Jones David</b><sup>1</sup>, 
+    <b>Shreya Ghosh</b><sup>2</sup>
+  </p>
+  <p style="margin:3px 0;">
+    <sup>1</sup> School of Computer Science and Engineering, VIT-AP University, India
+  </p>
+  <p style="margin:3px 0;">
+    <sup>2</sup> School of Electrical and Computer Sciences, Indian Institute of Technology Bhubaneswar, India
+  </p>
+</div>
+<br />
 
 ![React](https://img.shields.io/badge/react-%2320232a.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB)
 ![Vite](https://img.shields.io/badge/vite-%23646CFF.svg?style=for-the-badge&logo=vite&logoColor=white)
 ![TailwindCSS](https://img.shields.io/badge/tailwindcss-%2338B2AC.svg?style=for-the-badge&logo=tailwind-css&logoColor=white)
 ![Redux](https://img.shields.io/badge/redux-%23593d88.svg?style=for-the-badge&logo=redux&logoColor=white)
+
+# IntelliCode Frontend
 
 **IntelliCode (IntelliT)** is an adaptive learning platform that bridges Intelligent Tutoring Systems (ITS) with coordinated Large Language Model (LLM) agents. This application serves as the interactive coding environment, adapting to the learner's mastery state in real-time through a centralized learner model.
 
