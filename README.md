@@ -1,60 +1,70 @@
 # IntelliCode Frontend
 
-**Multi-Agent LLM Intelligent Teaching System**
+![React](https://img.shields.io/badge/react-%2320232a.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB)
+![Vite](https://img.shields.io/badge/vite-%23646CFF.svg?style=for-the-badge&logo=vite&logoColor=white)
+![TailwindCSS](https://img.shields.io/badge/tailwindcss-%2338B2AC.svg?style=for-the-badge&logo=tailwind-css&logoColor=white)
+![Redux](https://img.shields.io/badge/redux-%23593d88.svg?style=for-the-badge&logo=redux&logoColor=white)
 
-The frontend interface for IntelliCode (IntelliT), a novel adaptive learning platform that bridges Intelligent Tutoring Systems (ITS) with coordinated LLM agents. This application provides a rich, interactive coding environment that adapts to the learner's mastery state in real-time.
+**IntelliCode (IntelliT)** is an adaptive learning platform that bridges Intelligent Tutoring Systems (ITS) with coordinated Large Language Model (LLM) agents. This application serves as the interactive coding environment, adapting to the learner's mastery state in real-time through a centralized learner model.
 
-Based on the architecture described in: *IntelliCode - Multi-Agent LLM Intelligent Teaching System: A Principled Architecture with Centralized Learner Modeling*.
+This implementation is the reference frontend for the architecture described in *IntelliCode - Multi-Agent LLM Intelligent Teaching System: A Principled Architecture with Centralized Learner Modeling*.
 
-## Key Features
+## Key Capabilities
 
-As described in the system architecture:
-- **Adaptive Coding Interface**: A fully-featured IDE (Monaco Editor) that tracks behavioral signals.
-- **Graduated Hinting Mechanism**: Supports the "Pedagogical Feedback" agent by displaying hints in five levels (Metacognitive, Conceptual, Strategic, Structural, Targeted) without revealing solutions.
-- **Real-time Proficiency Feedback**: Visualizes mastery progress and provides optimization tips (Time, Space, Readability) after submission.
-- **Session Management**: Handles daily check-ins and session pacing governed by the Engagement Orchestrator.
+*   **Adaptive Coding Interface**: A fully-featured IDE powered by Monaco Editor that captures granular behavioral signals during coding sessions.
+*   **Graduated Hinting Mechanism**: Implements a five-level scaffolding protocol (Metacognitive to Targeted) to support learning without solution disclosure.
+*   **Real-time Proficiency Feedback**: Visualizes mastery progress and provides specific optimization advice (Time, Space, Readability) post-submission.
+*   **Session Management**: Orchestrates daily check-ins and session pacing under the governance of the backend Engagement Orchestrator.
 
-## Tech Stack
+## Technical Architecture
 
-- **Framework**: React 19 + Vite
-- **Styling**: Tailwind CSS
-- **State Management**: Redux Toolkit + Redux Persist
-- **Editor**: Monaco Editor (`@monaco-editor/react`)
-- **API Client**: Axios (configured with interceptors)
-- **Routing**: React Router DOM
+The frontend is built on a modern, component-based stack designed for performance and maintainability.
+
+| Component | Technology | Description |
+|-----------|------------|-------------|
+| **Core Framework** | React 19 | Component-based UI library |
+| **Build Tool** | Vite | Next-generation frontend tooling |
+| **State Management** | Redux Toolkit | Centralized state with `redux-persist` for session durability |
+| **Styling** | Tailwind CSS | Utility-first CSS framework |
+| **Editor** | Monaco Editor | VS Code-based code editor integration |
+| **Network** | Axios | Promise-based HTTP client with interceptors |
 
 ## Getting Started
 
 ### Prerequisites
-- Node.js (v18+ recommended)
-- npm or yarn
+
+Ensure the following are installed on your development machine:
+
+*   **Node.js**: v18.0.0 or higher
+*   **npm**: v9.0.0 or higher (or equivalent yarn/pnpm)
 
 ### Installation
 
-1. Navigate to the frontend directory:
-   ```bash
-   cd frontend
-   ```
+1.  Navigate to the frontend directory:
+    ```bash
+    cd frontend
+    ```
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+2.  Install dependencies:
+    ```bash
+    npm install
+    ```
 
 ### Configuration
 
-Create a `.env` file in the `frontend` root to configure the connection to the backend orchestrator:
+Create a `.env` file in the `frontend` root directory to configure the backend connection.
 
-```env
-VITE_API_URL=http://localhost:8000  # Default local backend URL
+```ini
+# API Configuration
+VITE_API_URL=http://localhost:8000
 ```
 
-### Running Locally
+### Development
 
-Start the development server:
+Start the development server with hot module replacement:
 
 ```bash
 npm run dev
 ```
 
-The application will be available at `http://localhost:5173` (default Vite port).
+Access the application at `http://localhost:5173`.
