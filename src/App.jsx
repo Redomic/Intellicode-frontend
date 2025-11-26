@@ -11,6 +11,7 @@ import DashboardPage from './pages/Dashboard/DashboardPage';
 import CodingPracticePage from './pages/Coding/CodingPracticePage';
 import ProfilePage from './pages/Profile/ProfilePage';
 import RoadmapPage from './pages/Roadmap/RoadmapPage';
+import NotFoundPage from './pages/NotFoundPage';
 
 function App() {
   return (
@@ -88,6 +89,7 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </AuthStateManager>
   );

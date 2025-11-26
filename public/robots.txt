@@ -1,0 +1,15 @@
+User-agent: *
+Allow: /
+Allow: /index.html
+Allow: /login
+Allow: /register
+Allow: /profile
+
+# Block dashboard and internal app pages from Google Search
+Disallow: /dashboard
+Disallow: /practice
+Disallow: /challenge
+Disallow: /onboarding
+
+Sitemap: https://intellicode.redomic.in/sitemap.xml
+
