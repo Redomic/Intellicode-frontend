@@ -17,7 +17,7 @@ const ProfileHeader = ({ user, onStartChallenge, nextLevelInfo }) => {
   // Check authentication state
   const isAuthenticated = useSelector(selectIsAuthenticated);
   
-  // Fetch profile summary from backend
+  // Fetch profile summary from backend - removed custom hook execution to control fetch manually
   const { data: profileData, loading: profileLoading, error: profileError, execute: fetchProfileSummary } = useGetProfileSummary();
 
   // Update countdown timer every second
@@ -42,12 +42,12 @@ const ProfileHeader = ({ user, onStartChallenge, nextLevelInfo }) => {
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch profile data when user is authenticated
+  // Fetch profile data ONLY ONCE when user is authenticated
   useEffect(() => {
-    if (isAuthenticated && user) {
-      fetchProfileSummary();
+    if (isAuthenticated && user && !profileData && !profileLoading) {
+       fetchProfileSummary();
     }
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, user, profileData, profileLoading, fetchProfileSummary]);
 
   // Use real data from backend or fallback to defaults
   const userStats = profileData ? {

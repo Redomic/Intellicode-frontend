@@ -15,12 +15,13 @@ const StreakCounter = ({ streak: propStreak }) => {
   // Fetch streak data from backend
   const { data: streakData, loading: streakLoading, error: streakError, execute: fetchStreakData } = useGetUserStreak();
 
-  // Fetch streak data when user is authenticated
+  // Fetch streak data only once when user is authenticated
   useEffect(() => {
-    if (isAuthenticated && user) {
+    // Only fetch if we don't have data and aren't loading
+    if (isAuthenticated && user && !streakData && !streakLoading) {
       fetchStreakData();
     }
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, user, streakData, streakLoading, fetchStreakData]);
   
   // Use prop streak as fallback, then backend data, then default
   const currentStreak = streakData?.current_streak ?? propStreak ?? 0;

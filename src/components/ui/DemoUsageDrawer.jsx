@@ -15,7 +15,7 @@ const DemoUsageDrawer = () => {
   const isAuthenticated = useSelector(selectIsAuthenticated);
   const dispatch = useDispatch();
 
-  // Poll for user data updates
+  // Poll for user data updates only when limit not reached
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -33,11 +33,16 @@ const DemoUsageDrawer = () => {
     // Initial fetch
     fetchUserData();
 
-    // Poll every 5 seconds
-    const intervalId = setInterval(fetchUserData, 5000);
-
-    return () => clearInterval(intervalId);
-  }, [isAuthenticated, dispatch]);
+    // Poll every 5 seconds only if not over limit
+    // If limits are reached, we stop polling to save resources since they can't do anything anyway
+    const isLimitReached = (user?.interacted_questions?.length >= 3) || (user?.llm_usage_count >= 20);
+    
+    if (!isLimitReached) {
+       const intervalId = setInterval(fetchUserData, 5000);
+       return () => clearInterval(intervalId);
+    }
+    
+  }, [isAuthenticated, dispatch, user?.interacted_questions?.length, user?.llm_usage_count]);
 
   // Only show if user is authenticated
   if (!isAuthenticated) return null;

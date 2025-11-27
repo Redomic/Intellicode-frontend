@@ -16,12 +16,12 @@ const ContributionHeatmap = ({ user }) => {
   // Fetch contribution data from backend
   const { data: heatmapData, loading: heatmapLoading, error: heatmapError, execute: fetchHeatmapData } = useGetContributionHeatmap(365);
 
-  // Fetch heatmap data when user is authenticated
+  // Fetch heatmap data when user is authenticated - prevent polling by checking if data exists
   useEffect(() => {
-    if (isAuthenticated && currentUser) {
+    if (isAuthenticated && currentUser && !heatmapData && !heatmapLoading) {
       fetchHeatmapData();
     }
-  }, [isAuthenticated, currentUser]);
+  }, [isAuthenticated, currentUser, heatmapData, heatmapLoading, fetchHeatmapData]);
   
   // Use backend data or fallback to empty data
   const contributionData = heatmapData?.days || [];

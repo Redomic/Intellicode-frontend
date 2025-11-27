@@ -34,24 +34,10 @@ const DemoRestrictionModal = () => {
 
   // Poll user data to check limits in real-time
   useEffect(() => {
-    if (!user || isLimitReached) return;
-
-    const checkLimits = async () => {
-      try {
-        // We can use the existing fetchUserData from useAuth or just rely on 
-        // the DemoUsageDrawer's polling if it's mounted.
-        // But to be safe and self-contained, let's trigger a refresh if we're close to limits.
-        // Ideally, we dispatch an action or call an API.
-        // For now, let's assume the global state is updated by DemoUsageDrawer or other interactions.
-      } catch (error) {
-        console.error('Failed to check limits:', error);
-      }
-    };
-    
-    // Using a slightly longer interval than the drawer to avoid hammering
-    // relying mostly on Redux state updates from other components
-    const interval = setInterval(checkLimits, 10000);
-    return () => clearInterval(interval);
+    // Only poll if the drawer isn't already polling (drawer is present in global layout)
+    // The DemoUsageDrawer handles the polling now to avoid duplication.
+    // This effect is left empty or can be removed if we are confident the drawer is always mounted.
+    // For safety, we rely on the global user state updates from the drawer.
   }, [user, isLimitReached]);
 
   const handleDismiss = () => {
