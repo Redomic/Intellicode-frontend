@@ -16,6 +16,7 @@ import { useRoadmapQuestions, useCompletedQuestions } from '../../hooks/useAPI';
 import useSession from '../../hooks/useSession';
 import SessionAnalytics from '../../components/session/SessionAnalytics';
 import sessionAPI from '../../services/sessionAPI';
+import DemoRestrictionModal from '../../components/ui/DemoRestrictionModal';
 
 const DashboardPage = () => {
   const user = useSelector(selectCurrentUser);
@@ -180,6 +181,7 @@ const DashboardPage = () => {
 
     return (
     <div className="min-h-screen bg-zinc-900">
+      <DemoRestrictionModal />
       {/* Navigation */}
       <Navigation />
 

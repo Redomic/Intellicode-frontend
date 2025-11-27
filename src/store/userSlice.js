@@ -52,6 +52,9 @@ const userSlice = createSlice({
       
       // Store assessment result
       if (action.payload.assessmentResult) {
+        if (!Array.isArray(state.assessmentHistory)) {
+          state.assessmentHistory = [];
+        }
         state.assessmentHistory.push({
           ...action.payload.assessmentResult,
           completedAt: new Date().toISOString(),
@@ -97,6 +100,9 @@ const userSlice = createSlice({
     },
     
     addAssessmentResult: (state, action) => {
+      if (!Array.isArray(state.assessmentHistory)) {
+        state.assessmentHistory = [];
+      }
       state.assessmentHistory.push({
         ...action.payload,
         completedAt: new Date().toISOString()

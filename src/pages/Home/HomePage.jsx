@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { selectIsAuthenticated, selectIsOnboarded } from '../../store/userSlice';
 import Navigation from '../../components/Navigation';
 import AIAssistantOrb from '../../components/ui/AIAssistantOrb';
+import DemoRestrictionModal from '../../components/ui/DemoRestrictionModal';
 
 const HomePage = () => {
   const isAuthenticated = useSelector(selectIsAuthenticated);
@@ -71,6 +72,7 @@ const HomePage = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-zinc-900 via-zinc-900 to-blue-950/30 relative overflow-hidden">
+      <DemoRestrictionModal />
       {/* Animated Background */}
 
       {/* Navigation */}

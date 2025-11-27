@@ -12,10 +12,12 @@ import CodingPracticePage from './pages/Coding/CodingPracticePage';
 import ProfilePage from './pages/Profile/ProfilePage';
 import RoadmapPage from './pages/Roadmap/RoadmapPage';
 import NotFoundPage from './pages/NotFoundPage';
+import DemoUsageDrawer from './components/ui/DemoUsageDrawer';
 
 function App() {
   return (
     <AuthStateManager>
+      <DemoUsageDrawer />
       <Routes>
         <Route 
           path="/" 

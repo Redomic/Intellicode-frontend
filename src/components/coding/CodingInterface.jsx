@@ -281,7 +281,7 @@ const CodingInterface = ({
           roadmapId: roadmapId ? String(roadmapId) : undefined,
           difficulty: selectedQuestion.difficulty,
           language: String(language),
-          enableBehaviorTracking: true,
+          enableBehaviorTracking: false,
           enableFullscreen: Boolean(sessionConfig?.fullscreenActivated),
           timeCommitment: sessionConfig?.timeCommitment || '30min',
           userAgreements: sessionConfig?.userAgreements || {},
@@ -1163,7 +1163,7 @@ const CodingInterface = ({
       <div className="bg-zinc-800 border-b border-zinc-700 px-6 py-3 flex items-center">
         {/* Left Section */}
         <div className="flex items-center space-x-4 flex-1">
-          <h1 className="text-lg font-medium text-zinc-100">IntelliCode</h1>
+          <h1 className="text-lg font-bold text-zinc-100">IntelliCode <span className="text-blue-400 font-normal">Beta</span></h1>
           
             {/* Session Counter */}
             {currentSession && (

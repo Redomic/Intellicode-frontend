@@ -17,9 +17,9 @@ const Navigation = ({ className = '' }) => {
         {/* Logo */}
         <Link 
           to="/" 
-          className="text-xl font-thin text-zinc-100 tracking-tight hover:text-white transition-colors duration-200"
+          className="text-xl font-bold text-zinc-100 tracking-tight hover:text-white transition-colors duration-200"
         >
-          IntelliCode
+          IntelliCode <span className="text-blue-400 font-normal">Beta</span>
         </Link>
         
         {/* Right side - Authentication dependent */}
