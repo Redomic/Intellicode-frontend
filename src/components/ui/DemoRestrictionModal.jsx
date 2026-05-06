@@ -20,10 +20,11 @@ const DemoRestrictionModal = () => {
   const QUESTION_LIMIT = 3;
   const AI_LIMIT = 20;
 
-  // Check if limits reached
+  // Check if limits reached — study participants are exempt
   const questionsUsed = user?.interacted_questions?.length || 0;
   const aiCallsUsed = user?.llm_usage_count || 0;
-  const isLimitReached = questionsUsed >= QUESTION_LIMIT || aiCallsUsed >= AI_LIMIT;
+  const isStudyParticipant = !!user?.is_study_participant;
+  const isLimitReached = !isStudyParticipant && (questionsUsed >= QUESTION_LIMIT || aiCallsUsed >= AI_LIMIT);
 
   // Re-open modal if limit reached, preventing close
   useEffect(() => {
@@ -46,7 +47,7 @@ const DemoRestrictionModal = () => {
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || isStudyParticipant) return null;
 
   return (
     <AnimatePresence>
